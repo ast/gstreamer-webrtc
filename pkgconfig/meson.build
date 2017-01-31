@@ -29,6 +29,7 @@ pkg_libs = [
   'mpegts',
   'player',
   'plugins-bad',
+  'webrtc',
 ]
 
 #if use_wayland

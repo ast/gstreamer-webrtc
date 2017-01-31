@@ -2418,6 +2418,16 @@ AG_GST_CHECK_FEATURE(WEBRTCDSP, [WebRTC Audio Processing], webrtcdsp, [
   AC_LANG_POP([C++])
 ])
 
+dnl *** WebRTC Audio Processing ***
+translit(dnm, m, l) AM_CONDITIONAL(USE_WEBRTC, true)
+AG_GST_CHECK_FEATURE(WEBRTC, [WebRTC], webrtc, [
+  AG_GST_PKG_CHECK_MODULES(GST_SDP, gstreamer-sdp-1.0)
+  PKG_CHECK_MODULES(NICE, nice >= 0.1, [
+    HAVE_WEBRTC="yes" ], [
+    HAVE_WEBRTC="no"
+  ])
+])
+
 else
 
 dnl not building plugins with external dependencies,
@@ -2494,6 +2504,7 @@ AM_CONDITIONAL(USE_RTMP, false)
 AM_CONDITIONAL(USE_TELETEXTDEC, false)
 AM_CONDITIONAL(USE_UVCH264, false)
 AM_CONDITIONAL(USE_WEBP, false)
+AM_CONDITIONAL(USE_WEBRTC, false)
 AM_CONDITIONAL(USE_WEBRTCDSP, false)
 AM_CONDITIONAL(USE_OPENH264, false)
 AM_CONDITIONAL(USE_X265, false)
@@ -2669,6 +2680,7 @@ gst-libs/gst/codecparsers/Makefile
 gst-libs/gst/mpegts/Makefile
 gst-libs/gst/uridownloader/Makefile
 gst-libs/gst/wayland/Makefile
+gst-libs/gst/webrtc/Makefile
 gst-libs/gst/player/Makefile
 gst-libs/gst/video/Makefile
 gst-libs/gst/audio/Makefile
@@ -2717,6 +2729,7 @@ tests/examples/mxf/Makefile
 tests/examples/opencv/Makefile
 tests/examples/uvch264/Makefile
 tests/examples/waylandsink/Makefile
+tests/examples/webrtc/Makefile
 tests/icles/Makefile
 ext/voamrwbenc/Makefile
 ext/voaacenc/Makefile
@@ -2786,6 +2799,7 @@ ext/webp/Makefile
 ext/x265/Makefile
 ext/zbar/Makefile
 ext/dtls/Makefile
+ext/webrtc/Makefile
 ext/webrtcdsp/Makefile
 ext/ttml/Makefile
 po/Makefile.in
@@ -2806,6 +2820,8 @@ pkgconfig/gstreamer-player.pc
 pkgconfig/gstreamer-player-uninstalled.pc
 pkgconfig/gstreamer-wayland.pc
 pkgconfig/gstreamer-wayland-uninstalled.pc
+pkgconfig/gstreamer-webrtc.pc
+pkgconfig/gstreamer-webrtc-uninstalled.pc
 pkgconfig/gstreamer-bad-video.pc
 pkgconfig/gstreamer-bad-video-uninstalled.pc
 pkgconfig/gstreamer-bad-audio.pc
