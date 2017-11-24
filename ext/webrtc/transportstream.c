@@ -38,6 +38,7 @@ enum
   PROP_WEBRTC,
   PROP_SESSION_ID,
   PROP_RTCP_MUX,
+  PROP_DTLS_CLIENT,
 };
 
 static void
@@ -62,6 +63,9 @@ transport_stream_set_property (GObject * object, guint prop_id,
     case PROP_RTCP_MUX:
       stream->rtcp_mux = g_value_get_boolean (value);
       break;
+    case PROP_DTLS_CLIENT:
+      stream->dtls_client = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -82,6 +86,9 @@ transport_stream_get_property (GObject * object, guint prop_id,
       break;
     case PROP_RTCP_MUX:
       g_value_set_boolean (value, stream->rtcp_mux);
+      break;
+    case PROP_DTLS_CLIENT:
+      g_value_set_boolean (value, stream->dtls_client);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -126,6 +133,11 @@ transport_stream_constructed (GObject * object)
   gst_webrtc_rtp_receiver_set_rtcp_transport (trans->receiver, rtcp_transport);
 
   webrtc = GST_WEBRTC_BIN (gst_object_get_parent (GST_OBJECT (object)));
+
+  g_object_bind_property (transport, "client", stream, "dtls-client",
+      G_BINDING_BIDIRECTIONAL);
+  g_object_bind_property (rtcp_transport, "client", stream, "dtls-client",
+      G_BINDING_BIDIRECTIONAL);
 
   g_object_bind_property (transport, "certificate", rtcp_transport,
       "certificate", G_BINDING_BIDIRECTIONAL);
@@ -195,6 +207,12 @@ transport_stream_class_init (TransportStreamClass * klass)
       PROP_RTCP_MUX,
       g_param_spec_boolean ("rtcp-mux", "RTCP Mux",
           "Whether RTCP packets are muxed with RTP packets",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gobject_class,
+      PROP_DTLS_CLIENT,
+      g_param_spec_boolean ("dtls-client", "DTLS client",
+          "Whether we take the client role in DTLS negotiation",
           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 

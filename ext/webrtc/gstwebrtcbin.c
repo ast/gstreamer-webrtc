@@ -2886,7 +2886,7 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
         _connect_input_stream (webrtc, pad);
         _add_pad (webrtc, pad);
       }
-      g_object_set (transceiver->sender->transport, "client",
+      g_object_set (stream, "dtls-client",
           new_setup == GST_WEBRTC_DTLS_SETUP_ACTIVE, NULL);
     }
     if (new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY ||
@@ -2913,7 +2913,7 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
          * as soon as the pad is added */
         _add_pad_to_list (webrtc, pad);
       }
-      g_object_set (transceiver->receiver->transport, "client",
+      g_object_set (stream, "dtls-client",
           new_setup == GST_WEBRTC_DTLS_SETUP_ACTIVE, NULL);
     }
 

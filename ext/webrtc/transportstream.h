@@ -38,6 +38,7 @@ struct _TransportStream
   guint                     session_id;             /* session_id */
   gboolean                  rtcp;
   gboolean                  rtcp_mux;
+  gboolean                  dtls_client;
   TransportSendBin         *send_bin;               /* bin containing all the sending transport elements */
   TransportReceiveBin      *receive_bin;            /* bin containing all the receiving transport elements */
   GstWebRTCICEStream       *stream;
