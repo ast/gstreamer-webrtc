@@ -103,14 +103,6 @@ transport_stream_dispose (GObject * object)
     gst_object_unref (stream->receive_bin);
   stream->receive_bin = NULL;
 
-  if (stream->transport)
-    gst_object_unref (stream->transport);
-  stream->transport = NULL;
-
-  if (stream->rtcp_transport)
-    gst_object_unref (stream->rtcp_transport);
-  stream->rtcp_transport = NULL;
-
   GST_OBJECT_PARENT (object) = NULL;
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
@@ -122,15 +114,21 @@ transport_stream_constructed (GObject * object)
   TransportStream *stream = TRANSPORT_STREAM (object);
   GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (stream);
   GstWebRTCBin *webrtc;
+  GstWebRTCDTLSTransport *transport, *rtcp_transport;
+  GstWebRTCICETransport *ice_trans;
 
-  stream->transport = gst_webrtc_dtls_transport_new (stream->session_id, FALSE);
-  stream->rtcp_transport =
-      gst_webrtc_dtls_transport_new (stream->session_id, TRUE);
+  transport = gst_webrtc_dtls_transport_new (stream->session_id, FALSE);
+  rtcp_transport = gst_webrtc_dtls_transport_new (stream->session_id, TRUE);
+
+  gst_webrtc_rtp_sender_set_transport (trans->sender, transport);
+  gst_webrtc_rtp_sender_set_rtcp_transport (trans->sender, rtcp_transport);
+  gst_webrtc_rtp_receiver_set_transport (trans->receiver, transport);
+  gst_webrtc_rtp_receiver_set_rtcp_transport (trans->receiver, rtcp_transport);
 
   webrtc = GST_WEBRTC_BIN (gst_object_get_parent (GST_OBJECT (object)));
 
-  g_object_bind_property (stream->transport, "certificate",
-      stream->rtcp_transport, "certificate", G_BINDING_BIDIRECTIONAL);
+  g_object_bind_property (transport, "certificate", rtcp_transport,
+      "certificate", G_BINDING_BIDIRECTIONAL);
 
   /* Need to go full Java and have a transport manager?
    * Or make the caller set the ICE transport up? */
@@ -141,12 +139,17 @@ transport_stream_constructed (GObject * object)
         stream->session_id, trans->mline);
     _add_ice_stream_item (webrtc, stream->session_id, stream->stream);
   }
-  stream->transport->transport =
+  ice_trans =
       gst_webrtc_ice_find_transport (webrtc->priv->ice, stream->stream,
       GST_WEBRTC_ICE_COMPONENT_RTP);
-  stream->rtcp_transport->transport =
+  gst_webrtc_dtls_transport_set_transport (transport, ice_trans);
+  gst_object_unref (ice_trans);
+
+  ice_trans =
       gst_webrtc_ice_find_transport (webrtc->priv->ice, stream->stream,
       GST_WEBRTC_ICE_COMPONENT_RTCP);
+  gst_webrtc_dtls_transport_set_transport (rtcp_transport, ice_trans);
+  gst_object_unref (ice_trans);
 
   stream->send_bin = g_object_new (transport_send_bin_get_type (), "stream",
       stream, NULL);
@@ -155,6 +158,8 @@ transport_stream_constructed (GObject * object)
       "stream", stream, NULL);
   gst_object_ref_sink (stream->receive_bin);
 
+  gst_object_unref (transport);
+  gst_object_unref (rtcp_transport);
   gst_object_unref (webrtc);
 
   G_OBJECT_CLASS (parent_class)->constructed (object);

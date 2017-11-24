@@ -254,6 +254,30 @@ enum
 
 static guint gst_webrtc_bin_signals[LAST_SIGNAL] = { 0 };
 
+static GstWebRTCDTLSTransport *
+_transceiver_get_transport (GstWebRTCRTPTransceiver * trans)
+{
+  if (trans->sender) {
+    return trans->sender->transport;
+  } else if (trans->receiver) {
+    return trans->receiver->transport;
+  }
+
+  return NULL;
+}
+
+static GstWebRTCDTLSTransport *
+_transceiver_get_rtcp_transport (GstWebRTCRTPTransceiver * trans)
+{
+  if (trans->sender) {
+    return trans->sender->rtcp_transport;
+  } else if (trans->receiver) {
+    return trans->receiver->rtcp_transport;
+  }
+
+  return NULL;
+}
+
 typedef struct
 {
   guint session_id;
@@ -820,7 +844,7 @@ _collate_ice_connection_states (GstWebRTCBin * webrtc)
 
     g_object_get (stream, "rtcp-mux", &rtcp_mux, NULL);
 
-    transport = stream->transport->transport;
+    transport = _transceiver_get_transport (trans)->transport;
 
     /* get transport state */
     g_object_get (transport, "state", &ice_state, NULL);
@@ -828,7 +852,7 @@ _collate_ice_connection_states (GstWebRTCBin * webrtc)
     if (ice_state != STATE (CLOSED))
       all_closed = FALSE;
 
-    rtcp_transport = stream->rtcp_transport->transport;
+    rtcp_transport = _transceiver_get_rtcp_transport (trans)->transport;
 
     if (!rtcp_mux && rtcp_transport && transport != rtcp_transport) {
       g_object_get (rtcp_transport, "state", &ice_state, NULL);
@@ -912,7 +936,7 @@ _collate_ice_gathering_states (GstWebRTCBin * webrtc)
 
     g_object_get (stream, "rtcp-mux", &rtcp_mux, NULL);
 
-    transport = stream->transport->transport;
+    transport = _transceiver_get_transport (trans)->transport;
 
     /* get gathering state */
     g_object_get (transport, "gathering-state", &ice_state, NULL);
@@ -920,7 +944,7 @@ _collate_ice_gathering_states (GstWebRTCBin * webrtc)
     if (ice_state != STATE (COMPLETE))
       all_completed = FALSE;
 
-    rtcp_transport = stream->rtcp_transport->transport;
+    rtcp_transport = _transceiver_get_rtcp_transport (trans)->transport;
 
     if (!rtcp_mux && rtcp_transport && rtcp_transport != transport) {
       g_object_get (rtcp_transport, "gathering-state", &ice_state, NULL);
@@ -977,7 +1001,7 @@ _collate_peer_connection_states (GstWebRTCBin * webrtc)
       continue;
 
     g_object_get (stream, "rtcp-mux", &rtcp_mux, NULL);
-    transport = stream->transport;
+    transport = _transceiver_get_transport (trans);
 
     /* get transport state */
     g_object_get (transport, "state", &dtls_state, NULL);
@@ -985,7 +1009,7 @@ _collate_peer_connection_states (GstWebRTCBin * webrtc)
     g_object_get (transport->transport, "state", &ice_state, NULL);
     any_ice_state |= (1 << ice_state);
 
-    rtcp_transport = stream->rtcp_transport;
+    rtcp_transport = _transceiver_get_rtcp_transport (trans);
 
     if (!rtcp_mux && rtcp_transport && rtcp_transport != transport) {
       g_object_get (rtcp_transport, "state", &dtls_state, NULL);
@@ -1431,6 +1455,7 @@ _create_transport_channel (GstWebRTCBin * webrtc, guint session_id,
   GstWebRTCRTPTransceiver *trans;
   GstWebRTCRTPSender *sender;
   GstWebRTCRTPReceiver *receiver;
+  GstWebRTCDTLSTransport *transport;
   TransportStream *ret;
   gchar *pad_name;
 
@@ -1440,21 +1465,23 @@ _create_transport_channel (GstWebRTCBin * webrtc, guint session_id,
   ret = transport_stream_new (webrtc, sender, receiver, session_id, mlineindex);
   trans = GST_WEBRTC_RTP_TRANSCEIVER (ret);
   trans->direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
+  transport = _transceiver_get_transport (trans);
 
-  g_signal_connect (G_OBJECT (ret->transport->transport), "notify::state",
+  g_signal_connect (G_OBJECT (transport->transport), "notify::state",
       G_CALLBACK (_on_ice_transport_notify_state), webrtc);
-  g_signal_connect (G_OBJECT (ret->transport->transport),
+  g_signal_connect (G_OBJECT (transport->transport),
       "notify::gathering-state",
       G_CALLBACK (_on_ice_transport_notify_gathering_state), webrtc);
-  g_signal_connect (G_OBJECT (ret->transport), "notify::state",
+  g_signal_connect (G_OBJECT (transport), "notify::state",
       G_CALLBACK (_on_dtls_transport_notify_state), webrtc);
-  if (ret->transport != ret->rtcp_transport) {
-    g_signal_connect (G_OBJECT (ret->rtcp_transport->transport),
+
+  if ((transport = _transceiver_get_rtcp_transport (trans))) {
+    g_signal_connect (G_OBJECT (transport->transport),
         "notify::state", G_CALLBACK (_on_ice_transport_notify_state), webrtc);
-    g_signal_connect (G_OBJECT (ret->rtcp_transport->transport),
+    g_signal_connect (G_OBJECT (transport->transport),
         "notify::gathering-state",
         G_CALLBACK (_on_ice_transport_notify_gathering_state), webrtc);
-    g_signal_connect (G_OBJECT (ret->rtcp_transport), "notify::state",
+    g_signal_connect (G_OBJECT (transport), "notify::state",
         G_CALLBACK (_on_dtls_transport_notify_state), webrtc);
   }
 
@@ -1587,36 +1614,6 @@ sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
   return TRUE;
 }
 
-#if 0
-static GList *
-_transceiver_get_transports (GstWebRTCRTPTransceiver * trans)
-{
-  GList *ret = NULL;
-
-  if (trans->sender) {
-    if (trans->sender->transport) {
-      if (g_list_find (ret, trans->sender->transport->transport) == NULL)
-        ret = g_list_append (ret, trans->sender->transport->transport);
-    }
-    if (trans->sender->rtcp_transport) {
-      if (g_list_find (ret, trans->sender->rtcp_transport->transport) == NULL)
-        ret = g_list_append (ret, trans->sender->rtcp_transport->transport);
-    }
-  }
-  if (trans->receiver) {
-    if (trans->receiver->transport) {
-      if (g_list_find (ret, trans->receiver->transport->transport) == NULL)
-        ret = g_list_append (ret, trans->receiver->transport->transport);
-    }
-    if (trans->receiver->rtcp_transport) {
-      if (g_list_find (ret, trans->receiver->rtcp_transport->transport) == NULL)
-        ret = g_list_append (ret, trans->receiver->rtcp_transport->transport);
-    }
-  }
-
-  return ret;
-}
-#endif
 #define DEFAULT_ICE_UFRAG_LEN 32
 #define DEFAULT_ICE_PASSWORD_LEN 32
 static const gchar *ice_credential_chars =
@@ -1928,10 +1925,9 @@ _create_answer_task (GstWebRTCBin * webrtc, const GstStructure * options)
       if (!item)
         item = _create_transport_channel (webrtc, i, i);
 
-      g_object_get (item->transport, "certificate", &cert, NULL);
-    } else {
-      g_object_get (trans->sender->transport, "certificate", &cert, NULL);
+      trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
     }
+    g_object_get (trans->sender->transport, "certificate", &cert, NULL);
 
     {
       gchar *fingerprint, *val;
@@ -2583,6 +2579,7 @@ _connect_input_stream (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
   GstPad *rtp_sink;
   gchar *pad_name;
   TransportStream *item;
+  GstWebRTCRTPTransceiver *trans;
 
   GST_INFO_OBJECT (pad, "linking input stream %u", pad->session_id);
 
@@ -2598,13 +2595,12 @@ _connect_input_stream (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
   gst_ghost_pad_set_target (GST_GHOST_PAD (pad), rtp_sink);
   gst_object_unref (rtp_sink);
 
-  /* TODO: add scream in here */
-
   item = _find_transport_for_session (webrtc, pad->session_id);
   if (!item)
     item = _create_transport_channel (webrtc, pad->session_id, pad->session_id);
+  trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
 
-  pad->sender->transport = gst_object_ref (item->transport);
+  pad->sender = gst_object_ref (trans->sender);
 
   pad_name = g_strdup_printf ("send_rtp_src_%u", pad->session_id);
   if (!gst_element_link_pads (GST_ELEMENT (webrtc->rtpbin), pad_name,
@@ -2614,12 +2610,6 @@ _connect_input_stream (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
 
   if (pad->rtcp) {
     GObject *session;
-
-    if (pad->rtcp_mux) {
-      pad->sender->rtcp_transport = gst_object_ref (pad->sender->transport);
-    } else {
-      pad->sender->rtcp_transport = gst_object_ref (item->rtcp_transport);
-    }
 
     g_signal_emit_by_name (webrtc->rtpbin, "get-internal-session",
         pad->session_id, &session);
@@ -2652,11 +2642,14 @@ _create_output_network_transports (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
  */
   gchar *pad_name;
   TransportStream *item;
+  GstWebRTCRTPTransceiver *trans;
 
   item = _find_transport_for_session (webrtc, pad->session_id);
   if (!item)
     item = _create_transport_channel (webrtc, pad->session_id, pad->session_id);
-  pad->receiver->transport = gst_object_ref (item->transport);
+  trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
+
+  pad->receiver = gst_object_ref (trans->receiver);
 
   pad_name = g_strdup_printf ("recv_rtp_sink_%u", pad->session_id);
   if (!gst_element_link_pads (GST_ELEMENT (item->receive_bin), "rtp_src",
@@ -2665,20 +2658,6 @@ _create_output_network_transports (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
   g_free (pad_name);
 
   gst_element_sync_state_with_parent (GST_ELEMENT (item->receive_bin));
-
-  if (!pad->rtcp) {
-    pad->receiver->rtcp_transport = NULL;
-  } else if (pad->rtcp_mux) {
-    pad->receiver->rtcp_transport = gst_object_ref (pad->receiver->transport);
-  } else {
-    pad->receiver->rtcp_transport = gst_object_ref (item->rtcp_transport);
-  }
-}
-
-static gboolean
-match_first_receiver (GstWebRTCBinPad * pad, gconstpointer data)
-{
-  return pad->receiver != NULL;
 }
 
 static GstWebRTCBinPad *
@@ -2686,21 +2665,7 @@ _connect_output_stream (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
 {
   GST_INFO_OBJECT (pad, "linking output stream %u", pad->session_id);
 
-  /* FIXME: bundle negotiation */
-  if (webrtc->priv->bundle) {
-    /* FIXME: locking for this... */
-    GstWebRTCBinPad *other =
-        _find_pad (webrtc, NULL, (FindPadFunc) match_first_receiver);
-    if (other) {
-      pad->receiver->transport = gst_object_ref (other->receiver->transport);
-      /* rtcp_transport is always NULL when bundling */
-      gst_object_unref (other);
-    } else {
-      _create_output_network_transports (webrtc, pad);
-    }
-  } else {
-    _create_output_network_transports (webrtc, pad);
-  }
+  _create_output_network_transports (webrtc, pad);
 
   return pad;
 }
@@ -2910,8 +2875,7 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
       if (pad) {
         GST_DEBUG_OBJECT (webrtc, "found existing send pad %" GST_PTR_FORMAT
             " for transceiver %" GST_PTR_FORMAT, pad, transceiver);
-        gst_object_replace ((GstObject **) & transceiver->sender,
-            (GstObject *) pad->sender);
+        g_assert (transceiver->sender == pad->sender);
         _update_pad_from_sdp_media (webrtc, sdp, media_idx, pad);
         gst_object_unref (pad);
       } else {
@@ -2919,7 +2883,6 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
             "creating new pad send pad for transceiver %" GST_PTR_FORMAT,
             transceiver);
         pad = _create_pad_for_sdp_media (webrtc, GST_PAD_SINK, session_id);
-        pad->sender = gst_object_ref (transceiver->sender);
         _connect_input_stream (webrtc, pad);
         _add_pad (webrtc, pad);
       }
@@ -2935,8 +2898,7 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
       if (pad) {
         GST_DEBUG_OBJECT (webrtc, "found existing receive pad %" GST_PTR_FORMAT
             " for transceiver %" GST_PTR_FORMAT, pad, transceiver);
-        gst_object_replace ((GstObject **) & transceiver->receiver,
-            (GstObject *) pad->receiver);
+        g_assert (transceiver->receiver == pad->receiver);
         _update_pad_from_sdp_media (webrtc, sdp, media_idx, pad);
         gst_object_unref (pad);
       } else {
@@ -2945,7 +2907,6 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
             transceiver);
         pad = _create_pad_for_sdp_media (webrtc, GST_PAD_SRC, session_id);
         _update_pad_from_sdp_media (webrtc, sdp, media_idx, pad);
-        pad->receiver = gst_object_ref (transceiver->receiver);
         _connect_output_stream (webrtc, pad);
         /* delay adding the pad until rtpbin creates the recv output pad
          * to ghost to so queries/events travel through the pipeline correctly
@@ -3686,7 +3647,6 @@ gst_webrtc_bin_request_new_pad (GstElement * element, GstPadTemplate * templ,
         GST_WEBRTC_RTP_TRANSCEIVER (_create_transport_channel (webrtc, serial,
             serial));
     trans->direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
-    pad->sender = gst_object_ref (trans->sender);
     _connect_input_stream (webrtc, pad);
 
     /* TODO: update negotiation-needed */
@@ -4022,16 +3982,19 @@ gst_webrtc_bin_class_init (GstWebRTCBinClass * klass)
 static void
 _deref_and_unref (GObject ** object)
 {
-  TransportStream *item = (TransportStream *) * object;
-  GstWebRTCBin *webrtc =
-      GST_WEBRTC_BIN (gst_object_get_parent (GST_OBJECT (item)));
+  GstWebRTCRTPTransceiver *trans = (GstWebRTCRTPTransceiver *) * object;
+  GstWebRTCDTLSTransport *transport;
+  GstWebRTCBin *webrtc;
 
-  g_signal_handlers_disconnect_by_data (item->transport->transport, webrtc);
-  g_signal_handlers_disconnect_by_data (item->transport, webrtc);
-  if (item->transport != item->rtcp_transport) {
-    g_signal_handlers_disconnect_by_data (item->rtcp_transport->transport,
-        webrtc);
-    g_signal_handlers_disconnect_by_data (item->rtcp_transport, webrtc);
+  webrtc = GST_WEBRTC_BIN (gst_object_get_parent (GST_OBJECT (trans)));
+
+  if ((transport = _transceiver_get_transport (trans))) {
+    g_signal_handlers_disconnect_by_data (transport->transport, webrtc);
+    g_signal_handlers_disconnect_by_data (transport, webrtc);
+  }
+  if ((transport = _transceiver_get_rtcp_transport (trans))) {
+    g_signal_handlers_disconnect_by_data (transport->transport, webrtc);
+    g_signal_handlers_disconnect_by_data (transport, webrtc);
   }
 
   gst_object_unref (*object);

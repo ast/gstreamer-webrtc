@@ -40,8 +40,6 @@ struct _TransportStream
   gboolean                  rtcp_mux;
   TransportSendBin         *send_bin;               /* bin containing all the sending transport elements */
   TransportReceiveBin      *receive_bin;            /* bin containing all the receiving transport elements */
-  GstWebRTCDTLSTransport   *transport;
-  GstWebRTCDTLSTransport   *rtcp_transport;
   GstWebRTCICEStream       *stream;
 };
 

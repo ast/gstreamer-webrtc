@@ -29,7 +29,8 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define gst_webrtc_dtls_transport_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (GstWebRTCDTLSTransport, gst_webrtc_dtls_transport,
     GST_TYPE_OBJECT, GST_DEBUG_CATEGORY_INIT (gst_webrtc_dtls_transport_debug,
-        "dtlstransport", 0, "dtlstransport"););
+        "dtlstransport", 0, "dtlstransport");
+    );
 
 enum
 {
@@ -49,6 +50,16 @@ enum
   PROP_RTCP,
 };
 
+void
+gst_webrtc_dtls_transport_set_transport (GstWebRTCDTLSTransport * transport,
+    GstWebRTCICETransport * ice)
+{
+  g_return_if_fail (GST_IS_WEBRTC_DTLS_TRANSPORT (transport));
+  g_return_if_fail (GST_IS_WEBRTC_ICE_TRANSPORT (ice));
+
+  gst_object_replace ((GstObject **) & transport->transport, GST_OBJECT (ice));
+}
+
 static void
 gst_webrtc_dtls_transport_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
@@ -62,6 +73,8 @@ gst_webrtc_dtls_transport_set_property (GObject * object, guint prop_id,
     case PROP_CLIENT:
       g_object_set_property (G_OBJECT (webrtc->dtlssrtpenc), "is-client",
           value);
+      gst_element_set_locked_state (webrtc->dtlssrtpenc, FALSE);
+      gst_element_sync_state_with_parent (webrtc->dtlssrtpenc);
       break;
     case PROP_CERTIFICATE:
       g_object_set_property (G_OBJECT (webrtc->dtlssrtpdec), "pem", value);
@@ -113,7 +126,12 @@ gst_webrtc_dtls_transport_get_property (GObject * object, guint prop_id,
 static void
 gst_webrtc_dtls_transport_finalize (GObject * object)
 {
-//  GstWebRTCDTLSTransport *webrtc = GST_WEBRTC_DTLS_TRANSPORT (object);
+  GstWebRTCDTLSTransport *webrtc = GST_WEBRTC_DTLS_TRANSPORT (object);
+
+  if (webrtc->transport) {
+    gst_object_unref (webrtc->transport);
+  }
+  webrtc->transport = NULL;
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }

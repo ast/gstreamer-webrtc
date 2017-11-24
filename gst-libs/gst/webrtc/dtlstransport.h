@@ -57,6 +57,10 @@ struct _GstWebRTCDTLSTransportClass
 GST_EXPORT
 GstWebRTCDTLSTransport *    gst_webrtc_dtls_transport_new               (guint session_id, gboolean rtcp);
 
+GST_EXPORT
+void                        gst_webrtc_dtls_transport_set_transport     (GstWebRTCDTLSTransport * transport,
+                                                                         GstWebRTCICETransport * ice);
+
 G_END_DECLS
 
 #endif /* __GST_WEBRTC_DTLS_TRANSPORT_H__ */

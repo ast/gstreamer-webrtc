@@ -150,19 +150,20 @@ transport_send_bin_change_state (GstElement * element,
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:{
+      GstWebRTCRTPTransceiver *trans;
+      GstElement *elem;
       GstPad *pad;
+
+      trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
 
       /* XXX: don't change state until the client-ness has been chosen
        * arguably the element should be able to deal with this itself */
-      gst_element_set_locked_state (send->stream->transport->dtlssrtpenc, TRUE);
+      elem = trans->sender->transport->dtlssrtpenc;
+      gst_element_set_locked_state (elem, TRUE);
 
       /* unblock the encoder once the key is set, this should also be automatic */
-      pad =
-          gst_element_get_static_pad (send->stream->transport->dtlssrtpenc,
-          "rtp_sink_0");
-      send->rtp_block =
-          _create_pad_block (send->stream->transport->dtlssrtpenc, pad, 0, NULL,
-          NULL);
+      pad = gst_element_get_static_pad (elem, "rtp_sink_0");
+      send->rtp_block = _create_pad_block (elem, pad, 0, NULL, NULL);
       send->rtp_block->block_id =
           gst_pad_add_probe (pad,
           GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
@@ -171,12 +172,8 @@ transport_send_bin_change_state (GstElement * element,
       gst_object_unref (pad);
 
       /* unblock the encoder once the key is set, this should also be automatic */
-      pad =
-          gst_element_get_static_pad (send->stream->transport->dtlssrtpenc,
-          "rtcp_sink_0");
-      send->rtcp_mux_block =
-          _create_pad_block (send->stream->transport->dtlssrtpenc, pad, 0, NULL,
-          NULL);
+      pad = gst_element_get_static_pad (elem, "rtcp_sink_0");
+      send->rtcp_mux_block = _create_pad_block (elem, pad, 0, NULL, NULL);
       send->rtcp_mux_block->block_id =
           gst_pad_add_probe (pad,
           GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
@@ -184,16 +181,12 @@ transport_send_bin_change_state (GstElement * element,
           NULL);
       gst_object_unref (pad);
 
-      gst_element_set_locked_state (send->stream->rtcp_transport->dtlssrtpenc,
-          TRUE);
+      elem = trans->sender->rtcp_transport->dtlssrtpenc;
+      gst_element_set_locked_state (elem, TRUE);
 
       /* unblock the encoder once the key is set, this should also be automatic */
-      pad =
-          gst_element_get_static_pad (send->stream->rtcp_transport->dtlssrtpenc,
-          "rtcp_sink_0");
-      send->rtcp_block =
-          _create_pad_block (send->stream->rtcp_transport->dtlssrtpenc, pad, 0,
-          NULL, NULL);
+      pad = gst_element_get_static_pad (elem, "rtcp_sink_0");
+      send->rtcp_block = _create_pad_block (elem, pad, 0, NULL, NULL);
       send->rtcp_block->block_id =
           gst_pad_add_probe (pad,
           GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
@@ -211,22 +204,28 @@ transport_send_bin_change_state (GstElement * element,
     return ret;
 
   switch (transition) {
-    case GST_STATE_CHANGE_READY_TO_NULL:
+    case GST_STATE_CHANGE_READY_TO_NULL:{
+      GstWebRTCRTPTransceiver *trans;
+      GstElement *elem;
+
+      trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
+
       if (send->rtp_block)
         _free_pad_block (send->rtp_block);
       send->rtp_block = NULL;
       if (send->rtcp_mux_block)
         _free_pad_block (send->rtcp_mux_block);
       send->rtcp_mux_block = NULL;
-      gst_element_set_locked_state (send->stream->transport->dtlssrtpenc,
-          FALSE);
+      elem = trans->sender->transport->dtlssrtpenc;
+      gst_element_set_locked_state (elem, FALSE);
 
       if (send->rtcp_block)
         _free_pad_block (send->rtcp_block);
       send->rtcp_block = NULL;
-      gst_element_set_locked_state (send->stream->rtcp_transport->dtlssrtpenc,
-          FALSE);
+      elem = trans->sender->rtcp_transport->dtlssrtpenc;
+      gst_element_set_locked_state (elem, FALSE);
       break;
+    }
     default:
       break;
   }
@@ -237,12 +236,14 @@ transport_send_bin_change_state (GstElement * element,
 static void
 _on_dtls_enc_key_set (GstElement * element, TransportSendBin * send)
 {
-  if (element == send->stream->transport->dtlssrtpenc) {
+  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
+
+  if (element == trans->sender->transport->dtlssrtpenc) {
     _free_pad_block (send->rtp_block);
     send->rtp_block = NULL;
     _free_pad_block (send->rtcp_mux_block);
     send->rtcp_mux_block = NULL;
-  } else if (element == send->stream->rtcp_transport->dtlssrtpenc) {
+  } else if (element == trans->sender->rtcp_transport->dtlssrtpenc) {
     _free_pad_block (send->rtcp_block);
     send->rtcp_block = NULL;
   }
@@ -252,8 +253,9 @@ static void
 transport_send_bin_constructed (GObject * object)
 {
   TransportSendBin *send = TRANSPORT_SEND_BIN (object);
-  GstPadTemplate *templ;
+  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
   GstWebRTCDTLSTransport *transport;
+  GstPadTemplate *templ;
   GstPad *ghost, *pad;
 
   g_return_if_fail (send->stream);
@@ -261,7 +263,7 @@ transport_send_bin_constructed (GObject * object)
   g_object_bind_property (send, "rtcp-mux", send->stream, "rtcp-mux",
       G_BINDING_BIDIRECTIONAL);
 
-  transport = send->stream->transport;
+  transport = trans->sender->transport;
 
   templ = _find_pad_template (transport->dtlssrtpenc,
       GST_PAD_SINK, GST_PAD_REQUEST, "rtp_sink_%d");
@@ -290,7 +292,7 @@ transport_send_bin_constructed (GObject * object)
   gst_element_add_pad (GST_ELEMENT (send), ghost);
   gst_object_unref (pad);
 
-  transport = send->stream->rtcp_transport;
+  transport = trans->sender->rtcp_transport;
 
   templ = _find_pad_template (transport->dtlssrtpenc,
       GST_PAD_SINK, GST_PAD_REQUEST, "rtcp_sink_%d");

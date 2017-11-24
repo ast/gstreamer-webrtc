@@ -53,13 +53,19 @@ struct _GstWebRTCRTPReceiverClass
 };
 
 GST_EXPORT
-GstWebRTCRTPReceiver *  gst_webrtc_rtp_receiver_new                 (void);
+GstWebRTCRTPReceiver *      gst_webrtc_rtp_receiver_new                 (void);
 GST_EXPORT
-GstStructure *          gst_webrtc_rtp_receiver_get_parameters      (GstWebRTCRTPReceiver * receiver, gchar * kind);
+GstStructure *              gst_webrtc_rtp_receiver_get_parameters      (GstWebRTCRTPReceiver * receiver, gchar * kind);
 /* FIXME: promise? */
 GST_EXPORT
-gboolean                gst_webrtc_rtp_receiver_set_parameters      (GstWebRTCRTPReceiver * receiver,
-                                                                     GstStructure * parameters);
+gboolean                    gst_webrtc_rtp_receiver_set_parameters      (GstWebRTCRTPReceiver * receiver,
+                                                                         GstStructure * parameters);
+GST_EXPORT
+void                        gst_webrtc_rtp_receiver_set_transport       (GstWebRTCRTPReceiver * receiver,
+                                                                         GstWebRTCDTLSTransport * transport);
+GST_EXPORT
+void                        gst_webrtc_rtp_receiver_set_rtcp_transport  (GstWebRTCRTPReceiver * receiver,
+                                                                         GstWebRTCDTLSTransport * transport);
 
 G_END_DECLS
 

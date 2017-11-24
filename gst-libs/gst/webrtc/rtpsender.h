@@ -52,13 +52,21 @@ struct _GstWebRTCRTPSenderClass
 };
 
 GST_EXPORT
-GstWebRTCRTPSender *    gst_webrtc_rtp_sender_new               (GArray * send_encodings);
+GstWebRTCRTPSender *        gst_webrtc_rtp_sender_new                   (GArray * send_encodings);
 GST_EXPORT
-GstStructure *          gst_webrtc_rtp_sender_get_parameters    (GstWebRTCRTPSender * sender, gchar * kind);
+GstStructure *              gst_webrtc_rtp_sender_get_parameters        (GstWebRTCRTPSender * sender, gchar * kind);
 /* FIXME: promise? */
 GST_EXPORT
-gboolean                gst_webrtc_rtp_sender_set_parameters    (GstWebRTCRTPSender * sender,
-                                                                 GstStructure * parameters);
+gboolean                    gst_webrtc_rtp_sender_set_parameters        (GstWebRTCRTPSender * sender,
+                                                                         GstStructure * parameters);
+
+GST_EXPORT
+void                        gst_webrtc_rtp_sender_set_transport         (GstWebRTCRTPSender * sender,
+                                                                         GstWebRTCDTLSTransport * transport);
+GST_EXPORT
+void                        gst_webrtc_rtp_sender_set_rtcp_transport    (GstWebRTCRTPSender * sender,
+                                                                         GstWebRTCDTLSTransport * transport);
+
 
 G_END_DECLS
 

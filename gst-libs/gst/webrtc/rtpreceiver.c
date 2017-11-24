@@ -44,6 +44,28 @@ enum
 
 //static guint gst_webrtc_rtp_receiver_signals[LAST_SIGNAL] = { 0 };
 
+void
+gst_webrtc_rtp_receiver_set_transport (GstWebRTCRTPReceiver * receiver,
+    GstWebRTCDTLSTransport * transport)
+{
+  g_return_if_fail (GST_IS_WEBRTC_RTP_RECEIVER (receiver));
+  g_return_if_fail (GST_IS_WEBRTC_DTLS_TRANSPORT (transport));
+
+  gst_object_replace ((GstObject **) & receiver->transport,
+      GST_OBJECT (transport));
+}
+
+void
+gst_webrtc_rtp_receiver_set_rtcp_transport (GstWebRTCRTPReceiver * receiver,
+    GstWebRTCDTLSTransport * transport)
+{
+  g_return_if_fail (GST_IS_WEBRTC_RTP_RECEIVER (receiver));
+  g_return_if_fail (GST_IS_WEBRTC_DTLS_TRANSPORT (transport));
+
+  gst_object_replace ((GstObject **) & receiver->rtcp_transport,
+      GST_OBJECT (transport));
+}
+
 static void
 gst_webrtc_rtp_receiver_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
@@ -69,7 +91,15 @@ gst_webrtc_rtp_receiver_get_property (GObject * object, guint prop_id,
 static void
 gst_webrtc_rtp_receiver_finalize (GObject * object)
 {
-//  GstWebRTCRTPReceiver *webrtc = GST_WEBRTC_RTP_RECEIVER (object);
+  GstWebRTCRTPReceiver *webrtc = GST_WEBRTC_RTP_RECEIVER (object);
+
+  if (webrtc->transport)
+    gst_object_unref (webrtc->transport);
+  webrtc->transport = NULL;
+
+  if (webrtc->rtcp_transport)
+    gst_object_unref (webrtc->rtcp_transport);
+  webrtc->rtcp_transport = NULL;
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }

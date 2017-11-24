@@ -22,6 +22,7 @@
 #endif
 
 #include "rtpsender.h"
+#include "rtptransceiver.h"
 
 #define GST_CAT_DEFAULT gst_webrtc_rtp_sender_debug
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
@@ -43,12 +44,33 @@ enum
   PROP_0,
   PROP_MID,
   PROP_SENDER,
-  PROP_RECEIVER,
   PROP_STOPPED,
   PROP_DIRECTION,
 };
 
 //static guint gst_webrtc_rtp_sender_signals[LAST_SIGNAL] = { 0 };
+
+void
+gst_webrtc_rtp_sender_set_transport (GstWebRTCRTPSender * sender,
+    GstWebRTCDTLSTransport * transport)
+{
+  g_return_if_fail (GST_IS_WEBRTC_RTP_SENDER (sender));
+  g_return_if_fail (GST_IS_WEBRTC_DTLS_TRANSPORT (transport));
+
+  gst_object_replace ((GstObject **) & sender->transport,
+      GST_OBJECT (transport));
+}
+
+void
+gst_webrtc_rtp_sender_set_rtcp_transport (GstWebRTCRTPSender * sender,
+    GstWebRTCDTLSTransport * transport)
+{
+  g_return_if_fail (GST_IS_WEBRTC_RTP_SENDER (sender));
+  g_return_if_fail (GST_IS_WEBRTC_DTLS_TRANSPORT (transport));
+
+  gst_object_replace ((GstObject **) & sender->rtcp_transport,
+      GST_OBJECT (transport));
+}
 
 static void
 gst_webrtc_rtp_sender_set_property (GObject * object, guint prop_id,
@@ -75,7 +97,15 @@ gst_webrtc_rtp_sender_get_property (GObject * object, guint prop_id,
 static void
 gst_webrtc_rtp_sender_finalize (GObject * object)
 {
-//  GstWebRTCRTPSender *webrtc = GST_WEBRTC_RTP_SENDER (object);
+  GstWebRTCRTPSender *webrtc = GST_WEBRTC_RTP_SENDER (object);
+
+  if (webrtc->transport)
+    gst_object_unref (webrtc->transport);
+  webrtc->transport = NULL;
+
+  if (webrtc->rtcp_transport)
+    gst_object_unref (webrtc->rtcp_transport);
+  webrtc->rtcp_transport = NULL;
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }

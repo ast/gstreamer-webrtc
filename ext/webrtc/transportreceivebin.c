@@ -187,7 +187,12 @@ transport_receive_bin_change_state (GstElement * element,
       gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)));
 
   switch (transition) {
-    case GST_STATE_CHANGE_NULL_TO_READY:
+    case GST_STATE_CHANGE_NULL_TO_READY:{
+      GstWebRTCRTPTransceiver *trans;
+      GstElement *elem;
+
+      trans = GST_WEBRTC_RTP_TRANSCEIVER (receive->stream);
+
       receive->rtp_block =
           _create_pad_block (GST_ELEMENT (receive), receive->rtp_src, 0, NULL,
           NULL);
@@ -198,15 +203,14 @@ transport_receive_bin_change_state (GstElement * element,
       /* XXX: because nice needs the nicesrc internal main loop running in order
        * correctly STUN... */
       /* FIXME: this races with the pad exposure later and may get not-linked */
-      gst_element_set_locked_state (receive->stream->transport->transport->src,
-          TRUE);
-      gst_element_set_state (receive->stream->transport->transport->src,
-          GST_STATE_PLAYING);
-      gst_element_set_locked_state (receive->stream->rtcp_transport->transport->
-          src, TRUE);
-      gst_element_set_state (receive->stream->rtcp_transport->transport->src,
-          GST_STATE_PLAYING);
+      elem = trans->receiver->transport->transport->src;
+      gst_element_set_locked_state (elem, TRUE);
+      gst_element_set_state (elem, GST_STATE_PLAYING);
+      elem = trans->receiver->rtcp_transport->transport->src;
+      gst_element_set_locked_state (elem, TRUE);
+      gst_element_set_state (elem, GST_STATE_PLAYING);
       break;
+    }
     default:
       break;
   }
@@ -216,20 +220,24 @@ transport_receive_bin_change_state (GstElement * element,
     return ret;
 
   switch (transition) {
-    case GST_STATE_CHANGE_READY_TO_NULL:
-      gst_element_set_locked_state (receive->stream->transport->transport->src,
-          FALSE);
-      gst_element_set_state (receive->stream->transport->transport->src,
-          GST_STATE_NULL);
-      gst_element_set_locked_state (receive->stream->rtcp_transport->transport->
-          src, FALSE);
-      gst_element_set_state (receive->stream->rtcp_transport->transport->src,
-          GST_STATE_NULL);
+    case GST_STATE_CHANGE_READY_TO_NULL:{
+      GstWebRTCRTPTransceiver *trans;
+      GstElement *elem;
+
+      trans = GST_WEBRTC_RTP_TRANSCEIVER (receive->stream);
+
+      elem = trans->receiver->transport->transport->src;
+      gst_element_set_locked_state (elem, FALSE);
+      gst_element_set_state (elem, GST_STATE_NULL);
+      elem = trans->receiver->rtcp_transport->transport->src;
+      gst_element_set_locked_state (elem, FALSE);
+      gst_element_set_state (elem, GST_STATE_NULL);
 
       if (receive->rtp_block)
         _free_pad_block (receive->rtp_block);
       receive->rtp_block = NULL;
       break;
+    }
     default:
       break;
   }
@@ -247,8 +255,8 @@ static void
 transport_receive_bin_constructed (GObject * object)
 {
   TransportReceiveBin *receive = TRANSPORT_RECEIVE_BIN (object);
+  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (receive->stream);
   GstWebRTCDTLSTransport *transport;
-  TransportStream *stream;
   GstPad *ghost, *pad;
   GstElement *capsfilter, *funnel, *queue;
   GstCaps *caps;
@@ -256,8 +264,7 @@ transport_receive_bin_constructed (GObject * object)
   g_return_if_fail (receive->stream);
 
   /* link ice src, dtlsrtp together for rtp */
-  stream = receive->stream;
-  transport = stream->transport;
+  transport = trans->receiver->transport;
   gst_bin_add (GST_BIN (receive), GST_ELEMENT (transport->dtlssrtpdec));
 
   capsfilter = gst_element_factory_make ("capsfilter", NULL);
@@ -277,7 +284,7 @@ transport_receive_bin_constructed (GObject * object)
     g_warn_if_reached ();
 
   /* link ice src, dtlsrtp together for rtcp */
-  transport = receive->stream->rtcp_transport;
+  transport = trans->receiver->rtcp_transport;
   gst_bin_add (GST_BIN (receive), GST_ELEMENT (transport->dtlssrtpdec));
 
   capsfilter = gst_element_factory_make ("capsfilter", NULL);
@@ -299,11 +306,11 @@ transport_receive_bin_constructed (GObject * object)
   /* create funnel for rtp_src */
   funnel = gst_element_factory_make ("funnel", NULL);
   gst_bin_add (GST_BIN (receive), funnel);
-  if (!gst_element_link_pads (stream->transport->dtlssrtpdec, "rtp_src",
-          funnel, "sink_0"))
+  if (!gst_element_link_pads (trans->receiver->transport->dtlssrtpdec,
+          "rtp_src", funnel, "sink_0"))
     g_warn_if_reached ();
-  if (!gst_element_link_pads (stream->rtcp_transport->dtlssrtpdec, "rtp_src",
-          funnel, "sink_1"))
+  if (!gst_element_link_pads (trans->receiver->rtcp_transport->dtlssrtpdec,
+          "rtp_src", funnel, "sink_1"))
     g_warn_if_reached ();
 
   queue = gst_element_factory_make ("queue", NULL);
@@ -324,11 +331,11 @@ transport_receive_bin_constructed (GObject * object)
   /* create funnel for rtcp_src */
   funnel = gst_element_factory_make ("funnel", NULL);
   gst_bin_add (GST_BIN (receive), funnel);
-  if (!gst_element_link_pads (stream->transport->dtlssrtpdec, "rtcp_src",
-          funnel, "sink_0"))
+  if (!gst_element_link_pads (trans->receiver->transport->dtlssrtpdec,
+          "rtcp_src", funnel, "sink_0"))
     g_warn_if_reached ();
-  if (!gst_element_link_pads (stream->rtcp_transport->dtlssrtpdec, "rtcp_src",
-          funnel, "sink_1"))
+  if (!gst_element_link_pads (trans->receiver->rtcp_transport->dtlssrtpdec,
+          "rtcp_src", funnel, "sink_1"))
     g_warn_if_reached ();
 
   pad = gst_element_get_static_pad (funnel, "src");
