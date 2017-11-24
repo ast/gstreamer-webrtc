@@ -2925,10 +2925,6 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
       }
       g_object_set (transceiver->sender->transport, "client",
           new_setup == GST_WEBRTC_DTLS_SETUP_ACTIVE, NULL);
-      gst_element_set_locked_state (transceiver->sender->transport->dtlssrtpenc,
-          FALSE);
-      gst_element_sync_state_with_parent (transceiver->sender->
-          transport->dtlssrtpenc);
     }
     if (new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY ||
         new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV) {
@@ -2958,10 +2954,6 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
       }
       g_object_set (transceiver->receiver->transport, "client",
           new_setup == GST_WEBRTC_DTLS_SETUP_ACTIVE, NULL);
-      gst_element_set_locked_state (transceiver->receiver->
-          transport->dtlssrtpenc, FALSE);
-      gst_element_sync_state_with_parent (transceiver->receiver->
-          transport->dtlssrtpenc);
     }
 
     if (new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY ||

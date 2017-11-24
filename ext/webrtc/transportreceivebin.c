@@ -165,18 +165,6 @@ transport_receive_bin_get_property (GObject * object, guint prop_id,
 }
 
 static void
-transport_receive_bin_dispose (GObject * object)
-{
-  TransportReceiveBin *receive = TRANSPORT_RECEIVE_BIN (object);
-
-  if (receive->rtp_block)
-    _free_pad_block (receive->rtp_block);
-  receive->rtp_block = NULL;
-
-  G_OBJECT_CLASS (parent_class)->dispose (object);
-}
-
-static void
 transport_receive_bin_finalize (GObject * object)
 {
   TransportReceiveBin *receive = TRANSPORT_RECEIVE_BIN (object);
@@ -200,6 +188,13 @@ transport_receive_bin_change_state (GstElement * element,
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:
+      receive->rtp_block =
+          _create_pad_block (GST_ELEMENT (receive), receive->rtp_src, 0, NULL,
+          NULL);
+      receive->rtp_block->block_id =
+          gst_pad_add_probe (receive->rtp_src, GST_PAD_PROBE_TYPE_ALL_BOTH,
+          (GstPadProbeCallback) pad_block, receive, NULL);
+
       /* XXX: because nice needs the nicesrc internal main loop running in order
        * correctly STUN... */
       /* FIXME: this races with the pad exposure later and may get not-linked */
@@ -230,6 +225,10 @@ transport_receive_bin_change_state (GstElement * element,
           src, FALSE);
       gst_element_set_state (receive->stream->rtcp_transport->transport->src,
           GST_STATE_NULL);
+
+      if (receive->rtp_block)
+        _free_pad_block (receive->rtp_block);
+      receive->rtp_block = NULL;
       break;
     default:
       break;
@@ -319,13 +318,6 @@ transport_receive_bin_constructed (GObject * object)
   pad = gst_element_get_static_pad (queue, "src");
   receive->rtp_src = gst_ghost_pad_new ("rtp_src", pad);
 
-  receive->rtp_block =
-      _create_pad_block (GST_ELEMENT (receive), receive->rtp_src, 0, NULL,
-      NULL);
-  receive->rtp_block->block_id =
-      gst_pad_add_probe (receive->rtp_src, GST_PAD_PROBE_TYPE_ALL_BOTH,
-      (GstPadProbeCallback) pad_block, receive, NULL);
-
   gst_element_add_pad (GST_ELEMENT (receive), receive->rtp_src);
   gst_object_unref (pad);
 
@@ -366,7 +358,6 @@ transport_receive_bin_class_init (TransportReceiveBinClass * klass)
   gobject_class->constructed = transport_receive_bin_constructed;
   gobject_class->get_property = transport_receive_bin_get_property;
   gobject_class->set_property = transport_receive_bin_set_property;
-  gobject_class->dispose = transport_receive_bin_dispose;
   gobject_class->finalize = transport_receive_bin_finalize;
 
   g_object_class_install_property (gobject_class,
