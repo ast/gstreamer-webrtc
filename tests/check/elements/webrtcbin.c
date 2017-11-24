@@ -50,6 +50,7 @@ struct test_webrtc
   GThread *thread;
   GMainLoop *loop;
   GstElement *pipeline;
+  GstBus *bus;
   GstElement *webrtc1;
   GstElement *webrtc2;
   GMutex lock;
@@ -342,7 +343,6 @@ static struct test_webrtc *
 test_webrtc_new (void)
 {
   struct test_webrtc *ret = g_new0 (struct test_webrtc, 1);
-  GstBus *bus;
 
   ret->on_negotiation_needed = _negotiation_not_reached;
   ret->on_ice_candidate = _ice_candidate_not_reached;
@@ -355,9 +355,8 @@ test_webrtc_new (void)
   g_cond_init (&ret->cond);
 
   ret->pipeline = gst_pipeline_new (NULL);
-  bus = gst_pipeline_get_bus (GST_PIPELINE (ret->pipeline));
-  gst_bus_add_watch (bus, (GstBusFunc) _bus_watch, ret);
-  gst_object_unref (bus);
+  ret->bus = gst_pipeline_get_bus (GST_PIPELINE (ret->pipeline));
+  gst_bus_add_watch (ret->bus, (GstBusFunc) _bus_watch, ret);
   ret->webrtc1 = gst_element_factory_make ("webrtcbin", NULL);
   ret->webrtc2 = gst_element_factory_make ("webrtcbin", NULL);
   fail_unless (ret->webrtc1 != NULL && ret->webrtc2 != NULL);
@@ -412,6 +411,8 @@ test_webrtc_free (struct test_webrtc *t)
 
   g_thread_join (t->thread);
 
+  gst_bus_remove_watch (t->bus);
+  gst_object_unref (t->bus);
   gst_object_unref (t->pipeline);
 
   if (t->data_notify)
