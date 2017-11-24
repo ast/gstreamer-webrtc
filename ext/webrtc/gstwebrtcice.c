@@ -38,8 +38,8 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define gst_webrtc_ice_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (GstWebRTCICE, gst_webrtc_ice,
     GST_TYPE_OBJECT,
-    GST_DEBUG_CATEGORY_INIT (gst_webrtc_ice_debug, "webrtcice", 0,
-        "webrtcice"););
+    GST_DEBUG_CATEGORY_INIT (gst_webrtc_ice_debug, "webrtcice", 0, "webrtcice");
+    );
 
 GQuark
 gst_webrtc_ice_error_quark (void)
@@ -581,8 +581,11 @@ _clear_ice_stream (struct NiceStreamItem *item)
   if (!item)
     return;
 
-  if (item->stream)
+  if (item->stream) {
+    g_signal_handlers_disconnect_by_data (item->stream->ice->priv->nice_agent,
+        item->stream);
     gst_object_unref (item->stream);
+  }
 }
 
 static gchar *
@@ -804,12 +807,13 @@ gst_webrtc_ice_finalize (GObject * object)
     gst_uri_unref (ice->turn_server);
   if (ice->stun_server)
     gst_uri_unref (ice->stun_server);
-  g_object_unref (ice->priv->nice_agent);
 
   g_mutex_clear (&ice->priv->lock);
   g_cond_clear (&ice->priv->cond);
 
   g_array_free (ice->priv->nice_stream_map, TRUE);
+
+  g_object_unref (ice->priv->nice_agent);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }

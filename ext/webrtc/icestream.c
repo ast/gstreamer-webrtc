@@ -97,13 +97,11 @@ static void
 gst_webrtc_ice_stream_finalize (GObject * object)
 {
   GstWebRTCICEStream *stream = GST_WEBRTC_ICE_STREAM (object);
-  NiceAgent *agent;
 
-  g_object_get (stream->ice, "agent", &agent, NULL);
-  g_signal_handlers_disconnect_by_data (agent, stream);
-  g_object_unref (agent);
+  g_list_free (stream->priv->transports);
+  stream->priv->transports = NULL;
 
-  g_object_unref (stream->ice);
+  G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static void
@@ -164,6 +162,8 @@ gst_webrtc_ice_stream_constructed (GObject * object)
       G_CALLBACK (_on_candidate_gathering_done), stream);
 
   g_object_unref (agent);
+
+  G_OBJECT_CLASS (parent_class)->constructed (object);
 }
 
 gboolean
