@@ -106,17 +106,19 @@ _on_answer_received (GstPromise * promise, gpointer user_data)
   struct test_webrtc *t = user_data;
   GstElement *offeror = t->offerror == 1 ? t->webrtc1 : t->webrtc2;
   GstElement *answerer = t->offerror == 2 ? t->webrtc1 : t->webrtc2;
+  const GstStructure *reply;
   GstWebRTCSessionDescription *answer = NULL;
   gchar *desc;
 
-  gst_structure_get (promise->promise, "answer",
+  reply = gst_promise_get_reply (promise);
+  gst_structure_get (reply, "answer",
       GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &answer, NULL);
   desc = gst_sdp_message_as_text (answer->sdp);
   GST_INFO ("Created Answer: %s", desc);
   g_free (desc);
 
   g_mutex_lock (&t->lock);
-  if (t->on_offer_created) {
+  if (t->on_answer_created) {
     gst_webrtc_session_description_free (answer);
     answer = t->on_answer_created (t, answerer, promise, t->answer_data);
   }
@@ -138,10 +140,12 @@ _on_offer_received (GstPromise * promise, gpointer user_data)
   struct test_webrtc *t = user_data;
   GstElement *offeror = t->offerror == 1 ? t->webrtc1 : t->webrtc2;
   GstElement *answerer = t->offerror == 2 ? t->webrtc1 : t->webrtc2;
+  const GstStructure *reply;
   GstWebRTCSessionDescription *offer = NULL;
   gchar *desc;
 
-  gst_structure_get (promise->promise, "offer",
+  reply = gst_promise_get_reply (promise);
+  gst_structure_get (reply, "offer",
       GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &offer, NULL);
   desc = gst_sdp_message_as_text (offer->sdp);
   GST_INFO ("Created offer: %s", desc);
@@ -157,8 +161,7 @@ _on_offer_received (GstPromise * promise, gpointer user_data)
   g_signal_emit_by_name (offeror, "set-local-description", offer, NULL);
   g_signal_emit_by_name (answerer, "set-remote-description", offer, NULL);
 
-  promise = gst_promise_new ();
-  gst_promise_set_change_callback (promise, _on_answer_received, t, NULL);
+  promise = gst_promise_new_with_change_func (_on_answer_received, t, NULL);
   g_signal_emit_by_name (answerer, "create-answer", NULL, promise);
 
   t->state = STATE_OFFER_CREATED;
@@ -437,10 +440,10 @@ test_webrtc_free (struct test_webrtc *t)
 static void
 test_webrtc_create_offer (struct test_webrtc *t, GstElement * webrtc)
 {
-  GstPromise *promise = gst_promise_new ();
+  GstPromise *promise;
 
   t->offerror = webrtc == t->webrtc1 ? 1 : 2;
-  gst_promise_set_change_callback (promise, _on_offer_received, t, NULL);
+  promise = gst_promise_new_with_change_func (_on_offer_received, t, NULL);
   g_signal_emit_by_name (webrtc, "create-offer", NULL, promise);
 }
 
@@ -514,11 +517,13 @@ _count_num_sdp_media (struct test_webrtc *t, GstElement * element,
 {
   GstWebRTCSessionDescription *offer = NULL;
   guint expected = GPOINTER_TO_UINT (user_data);
+  const GstStructure *reply;
   const gchar *field;
 
   field = t->offerror == 1 && t->webrtc1 == element ? "offer" : "answer";
 
-  gst_structure_get (promise->promise, field,
+  reply = gst_promise_get_reply (promise);
+  gst_structure_get (reply, field,
       GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &offer, NULL);
 
   fail_unless_equals_int (gst_sdp_message_medias_len (offer->sdp), expected);
@@ -642,11 +647,13 @@ validate_sdp (struct test_webrtc *t, GstElement * element,
 {
   struct validate_sdp *validate = user_data;
   GstWebRTCSessionDescription *offer = NULL;
+  const GstStructure *reply;
   const gchar *field;
 
   field = t->offerror == 1 && t->webrtc1 == element ? "offer" : "answer";
 
-  gst_structure_get (promise->promise, field,
+  reply = gst_promise_get_reply (promise);
+  gst_structure_get (reply, field,
       GST_TYPE_WEBRTC_SESSION_DESCRIPTION, &offer, NULL);
 
   validate->validate (t, element, offer, validate->user_data);
