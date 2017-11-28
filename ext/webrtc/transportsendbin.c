@@ -47,7 +47,8 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define transport_send_bin_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (TransportSendBin, transport_send_bin, GST_TYPE_BIN,
     GST_DEBUG_CATEGORY_INIT (gst_webrtc_transport_send_bin_debug,
-        "webrtctransportsendbin", 0, "webrtctransportsendbin"););
+        "webrtctransportsendbin", 0, "webrtctransportsendbin");
+    );
 
 static GstStaticPadTemplate rtp_sink_template =
 GST_STATIC_PAD_TEMPLATE ("rtp_sink",
@@ -144,24 +145,33 @@ transport_send_bin_change_state (GstElement * element,
   TransportSendBin *send = TRANSPORT_SEND_BIN (element);
   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
 
-  GST_DEBUG ("changing state: %s => %s",
+  GST_DEBUG_OBJECT (element, "changing state: %s => %s",
       gst_element_state_get_name (GST_STATE_TRANSITION_CURRENT (transition)),
       gst_element_state_get_name (GST_STATE_TRANSITION_NEXT (transition)));
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:{
       GstWebRTCRTPTransceiver *trans;
+      /* XXX: don't change state until the client-ness has been chosen
+       * arguably the element should be able to deal with this itself or
+       * we should only add it once/if we get the encoding keys */
+      trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
+
+      gst_element_set_locked_state (trans->sender->transport->dtlssrtpenc,
+          TRUE);
+      gst_element_set_locked_state (trans->sender->rtcp_transport->dtlssrtpenc,
+          TRUE);
+      break;
+    }
+    case GST_STATE_CHANGE_READY_TO_PAUSED:{
+      GstWebRTCRTPTransceiver *trans;
       GstElement *elem;
       GstPad *pad;
 
       trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
 
-      /* XXX: don't change state until the client-ness has been chosen
-       * arguably the element should be able to deal with this itself */
-      elem = trans->sender->transport->dtlssrtpenc;
-      gst_element_set_locked_state (elem, TRUE);
-
       /* unblock the encoder once the key is set, this should also be automatic */
+      elem = trans->sender->transport->dtlssrtpenc;
       pad = gst_element_get_static_pad (elem, "rtp_sink_0");
       send->rtp_block = _create_pad_block (elem, pad, 0, NULL, NULL);
       send->rtp_block->block_id =
@@ -181,9 +191,8 @@ transport_send_bin_change_state (GstElement * element,
           NULL);
       gst_object_unref (pad);
 
-      elem = trans->sender->rtcp_transport->dtlssrtpenc;
-      gst_element_set_locked_state (elem, TRUE);
 
+      elem = trans->sender->rtcp_transport->dtlssrtpenc;
       /* unblock the encoder once the key is set, this should also be automatic */
       pad = gst_element_get_static_pad (elem, "rtcp_sink_0");
       send->rtcp_block = _create_pad_block (elem, pad, 0, NULL, NULL);
@@ -195,15 +204,28 @@ transport_send_bin_change_state (GstElement * element,
       gst_object_unref (pad);
       break;
     }
-    default:
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+    {
+      /* Release pad blocks */
+      if (send->rtp_block && send->rtp_block->block_id) {
+        gst_pad_set_active (send->rtp_block->pad, FALSE);
+        gst_pad_remove_probe (send->rtp_block->pad, send->rtp_block->block_id);
+        send->rtp_block->block_id = 0;
+      }
+      if (send->rtcp_mux_block && send->rtcp_mux_block->block_id) {
+        gst_pad_set_active (send->rtcp_mux_block->pad, FALSE);
+        gst_pad_remove_probe (send->rtcp_mux_block->pad,
+            send->rtcp_mux_block->block_id);
+        send->rtcp_mux_block->block_id = 0;
+      }
+      if (send->rtcp_block && send->rtcp_block->block_id) {
+        gst_pad_set_active (send->rtcp_block->pad, FALSE);
+        gst_pad_remove_probe (send->rtcp_block->pad,
+            send->rtcp_block->block_id);
+        send->rtcp_block->block_id = 0;
+      }
       break;
-  }
-
-  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-  if (ret == GST_STATE_CHANGE_FAILURE)
-    return ret;
-
-  switch (transition) {
+    }
     case GST_STATE_CHANGE_READY_TO_NULL:{
       GstWebRTCRTPTransceiver *trans;
       GstElement *elem;
@@ -230,6 +252,7 @@ transport_send_bin_change_state (GstElement * element,
       break;
   }
 
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
   return ret;
 }
 
