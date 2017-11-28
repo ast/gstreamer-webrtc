@@ -4,6 +4,7 @@ glib_enum_headers = dtlstransport.h icetransport.h rtptransceiver.h webrtc_fwd.h
 glib_enum_define = GST_WEBRTC
 glib_gen_prefix = gst_webrtc
 glib_gen_basename = webrtc
+glib_gen_decl_banner=GST_EXPORT
 
 built_sources = webrtc-enumtypes.c
 built_headers = webrtc-enumtypes.h
