@@ -131,14 +131,9 @@ gst_webrtc_bin_pad_finalize (GObject * object)
 {
   GstWebRTCBinPad *pad = GST_WEBRTC_BIN_PAD (object);
 
-  if (pad->sender)
-    gst_object_unref (pad->sender);
-  pad->sender = NULL;
-  if (pad->receiver)
-    gst_object_unref (pad->receiver);
-  pad->receiver = NULL;
-
-  g_array_free (pad->ptmap, TRUE);
+  if (pad->trans)
+    gst_object_unref (pad->trans);
+  pad->trans = NULL;
 
   G_OBJECT_CLASS (gst_webrtc_bin_pad_parent_class)->finalize (object);
 }
@@ -153,27 +148,14 @@ gst_webrtc_bin_pad_class_init (GstWebRTCBinPadClass * klass)
   gobject_class->finalize = gst_webrtc_bin_pad_finalize;
 }
 
-typedef struct
-{
-  guint8 pt;
-  GstCaps *caps;
-} PtMapItem;
-
-static void
-clear_ptmap_item (PtMapItem * item)
-{
-  if (item->caps)
-    gst_caps_unref (item->caps);
-}
-
 static GstCaps *
-_pad_get_caps_for_pt (GstWebRTCBinPad * pad, guint pt)
+_transport_stream_get_caps_for_pt (TransportStream * stream, guint pt)
 {
   guint i, len;
 
-  len = pad->ptmap->len;
+  len = stream->ptmap->len;
   for (i = 0; i < len; i++) {
-    PtMapItem *item = &g_array_index (pad->ptmap, PtMapItem, i);
+    PtMapItem *item = &g_array_index (stream->ptmap, PtMapItem, i);
     if (item->pt == pt)
       return item->caps;
   }
@@ -183,8 +165,6 @@ _pad_get_caps_for_pt (GstWebRTCBinPad * pad, guint pt)
 static void
 gst_webrtc_bin_pad_init (GstWebRTCBinPad * pad)
 {
-  pad->ptmap = g_array_new (FALSE, TRUE, sizeof (PtMapItem));
-  g_array_set_clear_func (pad->ptmap, (GDestroyNotify) clear_ptmap_item);
 }
 
 static GstWebRTCBinPad *
@@ -402,9 +382,24 @@ match_for_mid (GstWebRTCRTPTransceiver * trans, const gchar * mid)
 }
 
 static gboolean
-match_for_mline (GstWebRTCRTPTransceiver * trans, guint * mline)
+transceiver_match_for_mline (GstWebRTCRTPTransceiver * trans, guint * mline)
 {
   return trans->mline == *mline;
+}
+
+static GstWebRTCRTPTransceiver *
+_find_transceiver_for_mline (GstWebRTCBin * webrtc, guint mlineindex)
+{
+  GstWebRTCRTPTransceiver *trans;
+
+  trans = _find_transceiver (webrtc, &mlineindex,
+      (FindTransceiverFunc) transceiver_match_for_mline);
+
+  GST_TRACE_OBJECT (webrtc,
+      "Found transceiver %" GST_PTR_FORMAT " for mlineindex %u", trans,
+      mlineindex);
+
+  return trans;
 }
 
 static gboolean
@@ -499,38 +494,44 @@ _remove_pad (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
 typedef struct
 {
   GstPadDirection direction;
-  guint session_id;
-} SessionMatch;
+  guint mlineindex;
+} MLineMatch;
 
 static gboolean
-match_for_session (GstWebRTCBinPad * pad, const SessionMatch * match)
+pad_match_for_mline (GstWebRTCBinPad * pad, const MLineMatch * match)
 {
   return GST_PAD_DIRECTION (pad) == match->direction
-      && pad->session_id == match->session_id;
+      && pad->mlineindex == match->mlineindex;
+}
+
+static GstWebRTCBinPad *
+_find_pad_for_mline (GstWebRTCBin * webrtc, GstPadDirection direction,
+    guint mlineindex)
+{
+  MLineMatch m = { direction, mlineindex };
+
+  return _find_pad (webrtc, &m, (FindPadFunc) pad_match_for_mline);
 }
 
 typedef struct
 {
   GstPadDirection direction;
-  guint pt;
-} PtMatch;
+  GstWebRTCRTPTransceiver *trans;
+} TransMatch;
 
 static gboolean
-match_for_pt (GstWebRTCBinPad * pad, PtMatch * match)
+pad_match_for_transceiver (GstWebRTCBinPad * pad, TransMatch * m)
 {
-  int i, len;
+  return GST_PAD_DIRECTION (pad) == m->direction && pad->trans == m->trans;
+}
 
-  if (GST_PAD_DIRECTION (pad) != match->direction)
-    return FALSE;
+static GstWebRTCBinPad *
+_find_pad_for_transceiver (GstWebRTCBin * webrtc, GstPadDirection direction,
+    GstWebRTCRTPTransceiver * trans)
+{
+  TransMatch m = { direction, trans };
 
-  len = pad->ptmap->len;
-  for (i = 0; i < len; i++) {
-    PtMapItem *item = &g_array_index (pad->ptmap, PtMapItem, i);
-    if (item->pt == match->pt)
-      return TRUE;
-  }
-
-  return FALSE;
+  return _find_pad (webrtc, &m, (FindPadFunc) pad_match_for_transceiver);
 }
 
 #if 0
@@ -1359,9 +1360,7 @@ _find_codec_preferences (GstWebRTCBin * webrtc, GstWebRTCRTPTransceiver * trans,
         trans->codec_preferences);
     ret = gst_caps_ref (trans->codec_preferences);
   } else {
-    SessionMatch m = { direction, media_idx };
-    GstWebRTCBinPad *pad =
-        _find_pad (webrtc, &m, (FindPadFunc) match_for_session);
+    GstWebRTCBinPad *pad = _find_pad_for_mline (webrtc, direction, media_idx);
     if (pad) {
       GstCaps *caps = gst_pad_get_current_caps (GST_PAD (pad));
       if (caps) {
@@ -1921,11 +1920,11 @@ _create_answer_task (GstWebRTCBin * webrtc, const GstStructure * options)
 
     /* set the a=fingerprint: for this transport */
     if (!trans) {
-      TransportStream *item = _find_transport_for_session (webrtc, i);
-      if (!item)
-        item = _create_transport_channel (webrtc, i, i);
-
-      trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
+      trans = _find_transceiver_for_mline (webrtc, i);
+      if (!trans) {
+        TransportStream *item = _create_transport_channel (webrtc, i, i);
+        trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
+      }
     }
     g_object_get (trans->sender->transport, "certificate", &cert, NULL);
 
@@ -2389,133 +2388,6 @@ fail:
   return FALSE;
 }
 
-/*   m=<media> <UDP port> RTP/AVP <payload>
- */
-static void
-_update_pad_from_sdp_media (GstWebRTCBin * webrtc, const GstSDPMessage * sdp,
-    guint media_idx, GstWebRTCBinPad * pad)
-{
-  guint i, len;
-  const gchar *proto;
-  GstCaps *global_caps;
-  const GstSDPMedia *media;
-
-  media = gst_sdp_message_get_media (sdp, media_idx);
-
-  /* get proto */
-  proto = gst_sdp_media_get_proto (media);
-  if (proto == NULL)
-    goto no_proto;
-
-  /* Parse global SDP attributes once */
-  global_caps = gst_caps_new_empty_simple ("application/x-unknown");
-  GST_DEBUG_OBJECT (webrtc, "mapping sdp session level attributes to caps");
-  gst_sdp_message_attributes_to_caps (sdp, global_caps);
-  GST_DEBUG_OBJECT (webrtc, "mapping sdp media level attributes to caps");
-  gst_sdp_media_attributes_to_caps (media, global_caps);
-
-  /* clear the ptmap */
-  g_array_set_size (pad->ptmap, 0);
-
-  len = gst_sdp_media_formats_len (media);
-  for (i = 0; i < len; i++) {
-    int j;
-    GstCaps *caps, *outcaps;
-    GstStructure *s;
-    PtMapItem item;
-    gint pt;
-
-    pt = atoi (gst_sdp_media_get_format (media, i));
-
-    GST_DEBUG_OBJECT (webrtc, " looking at %d pt: %d", i, pt);
-
-    /* convert caps */
-    caps = gst_sdp_media_get_caps_from_media (media, pt);
-    if (caps == NULL) {
-      GST_WARNING_OBJECT (webrtc, " skipping pt %d without caps", pt);
-      continue;
-    }
-
-    /* Merge in global caps */
-    /* Intersect will merge in missing fields to the current caps */
-    outcaps = gst_caps_intersect (caps, global_caps);
-    gst_caps_unref (caps);
-
-    /* the first pt will be the default */
-    if (pad->ptmap->len == 0)
-      pad->default_pt = pt;
-
-    s = gst_caps_get_structure (outcaps, 0);
-    gst_structure_set_name (s, "application/x-rtp");
-
-    item.pt = pt;
-    item.caps = outcaps;
-
-    g_array_append_val (pad->ptmap, item);
-
-    for (j = 0; j < gst_sdp_media_attributes_len (media); j++) {
-      const GstSDPAttribute *attr = gst_sdp_media_get_attribute (media, j);
-
-      GST_TRACE_OBJECT (pad, "media %u has attribute %u %s%s%s", media_idx, j,
-          attr->key, !IS_EMPTY_SDP_ATTRIBUTE (attr->value) ? ":" : "",
-          attr->value);
-      if (g_strcmp0 (attr->key, "rtcp") == 0) {
-        GST_LOG_OBJECT (pad, "supports rtcp");
-        pad->rtcp = TRUE;
-      }
-      if (g_strcmp0 (attr->key, "rtcp-mux") == 0) {
-        GST_LOG_OBJECT (pad, "supports rtcp-mux");
-        pad->rtcp_mux = TRUE;
-      }
-      if (g_strcmp0 (attr->key, "rtcp-rsize") == 0) {
-        GST_LOG_OBJECT (pad, "supports rtcp-rsize");
-        pad->rtcp_rsize = TRUE;
-      }
-    }
-
-    {
-      GObject *session;
-      g_signal_emit_by_name (webrtc->rtpbin, "get-internal-session",
-          pad->session_id, &session);
-      if (session) {
-        g_object_set (session, "rtcp-reduced-size", pad->rtcp_rsize, NULL);
-        g_object_unref (session);
-      }
-    }
-  }
-
-  gst_caps_unref (global_caps);
-  return;
-
-no_proto:
-  {
-    GST_ERROR_OBJECT (webrtc, "can't find proto in media");
-    return;
-  }
-}
-
-#if 0
-static GstWebRTCBinPad *
-_find_pad_for_sdp_media (GstWebRTCBin * webrtc,
-    GstPadDirection direction, const GstSDPMessage * sdp, guint media_idx)
-{
-  const GstSDPMedia *media = gst_sdp_message_get_media (sdp, media_idx);
-  GstWebRTCBinPad *pad;
-  int i;
-
-  for (i = 0; i < gst_sdp_media_formats_len (media); i++) {
-    PtMatch m;
-
-    m.direction = direction;
-    m.pt = atoi (gst_sdp_media_get_format (media, i));
-
-    if ((pad = _find_pad (webrtc, &m, (FindPadFunc) match_for_pt)))
-      return pad;
-  }
-
-  return NULL;
-}
-#endif
 static GstWebRTCBinPad *
 _create_pad_for_sdp_media (GstWebRTCBin * webrtc, GstPadDirection direction,
     guint media_idx)
@@ -2528,7 +2400,7 @@ _create_pad_for_sdp_media (GstWebRTCBin * webrtc, GstPadDirection direction,
       media_idx);
   pad = gst_webrtc_bin_pad_new (pad_name, direction);
   g_free (pad_name);
-  pad->session_id = media_idx;
+  pad->mlineindex = media_idx;
 
   return pad;
 }
@@ -2553,7 +2425,7 @@ _find_transceiver_for_sdp_media (GstWebRTCBin * webrtc,
   }
 
   ret = _find_transceiver (webrtc, &media_idx,
-      (FindTransceiverFunc) match_for_mline);
+      (FindTransceiverFunc) transceiver_match_for_mline);
 
 out:
   GST_TRACE_OBJECT (webrtc, "Found transceiver %" GST_PTR_FORMAT, ret);
@@ -2581,43 +2453,35 @@ _connect_input_stream (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
   TransportStream *item;
   GstWebRTCRTPTransceiver *trans;
 
-  GST_INFO_OBJECT (pad, "linking input stream %u", pad->session_id);
+  GST_INFO_OBJECT (pad, "linking input stream %u", pad->mlineindex);
 
   rtp_templ =
       _find_pad_template (webrtc->rtpbin, GST_PAD_SINK, GST_PAD_REQUEST,
       "send_rtp_sink_%u");
   g_assert (rtp_templ);
 
-  pad_name = g_strdup_printf ("send_rtp_sink_%u", pad->session_id);
+  pad_name = g_strdup_printf ("send_rtp_sink_%u", pad->mlineindex);
   rtp_sink =
       gst_element_request_pad (webrtc->rtpbin, rtp_templ, pad_name, NULL);
   g_free (pad_name);
   gst_ghost_pad_set_target (GST_GHOST_PAD (pad), rtp_sink);
   gst_object_unref (rtp_sink);
 
-  item = _find_transport_for_session (webrtc, pad->session_id);
-  if (!item)
-    item = _create_transport_channel (webrtc, pad->session_id, pad->session_id);
-  trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
+  trans = _find_transceiver_for_mline (webrtc, pad->mlineindex);
+  if (!trans) {
+    item = _create_transport_channel (webrtc, pad->mlineindex, pad->mlineindex);
+    trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
+  } else {
+    item = TRANSPORT_STREAM (trans);
+  }
 
-  pad->sender = gst_object_ref (trans->sender);
+  pad->trans = gst_object_ref (trans);
 
-  pad_name = g_strdup_printf ("send_rtp_src_%u", pad->session_id);
+  pad_name = g_strdup_printf ("send_rtp_src_%u", pad->mlineindex);
   if (!gst_element_link_pads (GST_ELEMENT (webrtc->rtpbin), pad_name,
           GST_ELEMENT (item->send_bin), "rtp_sink"))
     g_warn_if_reached ();
   g_free (pad_name);
-
-  if (pad->rtcp) {
-    GObject *session;
-
-    g_signal_emit_by_name (webrtc->rtpbin, "get-internal-session",
-        pad->session_id, &session);
-    if (session) {
-      g_object_set (session, "rtcp-reduced-size", pad->rtcp_rsize, NULL);
-      g_object_unref (session);
-    }
-  }
 
   gst_element_sync_state_with_parent (GST_ELEMENT (item->send_bin));
 
@@ -2644,14 +2508,17 @@ _create_output_network_transports (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
   TransportStream *item;
   GstWebRTCRTPTransceiver *trans;
 
-  item = _find_transport_for_session (webrtc, pad->session_id);
-  if (!item)
-    item = _create_transport_channel (webrtc, pad->session_id, pad->session_id);
-  trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
+  trans = _find_transceiver_for_mline (webrtc, pad->mlineindex);
+  if (!trans) {
+    item = _create_transport_channel (webrtc, pad->mlineindex, pad->mlineindex);
+    trans = GST_WEBRTC_RTP_TRANSCEIVER (item);
+  } else {
+    item = TRANSPORT_STREAM (trans);
+  }
 
-  pad->receiver = gst_object_ref (trans->receiver);
+  pad->trans = gst_object_ref (trans);
 
-  pad_name = g_strdup_printf ("recv_rtp_sink_%u", pad->session_id);
+  pad_name = g_strdup_printf ("recv_rtp_sink_%u", pad->mlineindex);
   if (!gst_element_link_pads (GST_ELEMENT (item->receive_bin), "rtp_src",
           GST_ELEMENT (webrtc->rtpbin), pad_name))
     g_warn_if_reached ();
@@ -2663,7 +2530,7 @@ _create_output_network_transports (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
 static GstWebRTCBinPad *
 _connect_output_stream (GstWebRTCBin * webrtc, GstWebRTCBinPad * pad)
 {
-  GST_INFO_OBJECT (pad, "linking output stream %u", pad->session_id);
+  GST_INFO_OBJECT (pad, "linking output stream %u", pad->mlineindex);
 
   _create_output_network_transports (webrtc, pad);
 
@@ -2710,7 +2577,7 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
   GstWebRTCRTPTransceiverDirection new_dir;
   const GstSDPMedia *media = gst_sdp_message_get_media (sdp, media_idx);
   GstWebRTCDTLSSetup new_setup;
-  gboolean new_rtcp_mux;
+  gboolean new_rtcp_mux, new_rtcp_rsize;
   int i;
 
   for (i = 0; i < gst_sdp_media_attributes_len (media); i++) {
@@ -2728,7 +2595,9 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
     const GstSDPMedia *local_media, *remote_media;
     GstWebRTCRTPTransceiverDirection local_dir, remote_dir;
     GstWebRTCDTLSSetup local_setup, remote_setup;
-    gboolean local_rtcp_mux, remote_rtcp_mux;
+    guint i, len;
+    const gchar *proto;
+    GstCaps *global_caps;
 
     local_media =
         gst_sdp_message_get_media (webrtc->current_local_description->sdp,
@@ -2843,10 +2712,68 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
     }
 #undef DIR
 
-    local_rtcp_mux = _media_has_attribute_key (local_media, "rtcp-mux");
-    remote_rtcp_mux = _media_has_attribute_key (remote_media, "rtcp-mux");
+    /* get proto */
+    proto = gst_sdp_media_get_proto (media);
+    if (proto != NULL) {
+      /* Parse global SDP attributes once */
+      global_caps = gst_caps_new_empty_simple ("application/x-unknown");
+      GST_DEBUG_OBJECT (webrtc, "mapping sdp session level attributes to caps");
+      gst_sdp_message_attributes_to_caps (sdp, global_caps);
+      GST_DEBUG_OBJECT (webrtc, "mapping sdp media level attributes to caps");
+      gst_sdp_media_attributes_to_caps (media, global_caps);
 
-    new_rtcp_mux = local_rtcp_mux && remote_rtcp_mux;
+      /* clear the ptmap */
+      g_array_set_size (stream->ptmap, 0);
+
+      len = gst_sdp_media_formats_len (media);
+      for (i = 0; i < len; i++) {
+        GstCaps *caps, *outcaps;
+        GstStructure *s;
+        PtMapItem item;
+        gint pt;
+
+        pt = atoi (gst_sdp_media_get_format (media, i));
+
+        GST_DEBUG_OBJECT (webrtc, " looking at %d pt: %d", i, pt);
+
+        /* convert caps */
+        caps = gst_sdp_media_get_caps_from_media (media, pt);
+        if (caps == NULL) {
+          GST_WARNING_OBJECT (webrtc, " skipping pt %d without caps", pt);
+          continue;
+        }
+
+        /* Merge in global caps */
+        /* Intersect will merge in missing fields to the current caps */
+        outcaps = gst_caps_intersect (caps, global_caps);
+        gst_caps_unref (caps);
+
+        s = gst_caps_get_structure (outcaps, 0);
+        gst_structure_set_name (s, "application/x-rtp");
+
+        item.pt = pt;
+        item.caps = outcaps;
+
+        g_array_append_val (stream->ptmap, item);
+      }
+
+      gst_caps_unref (global_caps);
+    }
+
+    new_rtcp_mux = _media_has_attribute_key (local_media, "rtcp-mux")
+        && _media_has_attribute_key (remote_media, "rtcp-mux");
+    new_rtcp_rsize = _media_has_attribute_key (local_media, "rtcp-rsize")
+        && _media_has_attribute_key (remote_media, "rtcp-rsize");
+
+    {
+      GObject *session;
+      g_signal_emit_by_name (webrtc->rtpbin, "get-internal-session",
+          media_idx, &session);
+      if (session) {
+        g_object_set (session, "rtcp-reduced-size", new_rtcp_rsize, NULL);
+        g_object_unref (session);
+      }
+    }
   }
 
   if (prev_dir != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE
@@ -2868,21 +2795,19 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
 
     if (new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDONLY ||
         new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV) {
-      GstWebRTCBinPad *pad;
-      SessionMatch m = { GST_PAD_SINK, session_id };
-
-      pad = _find_pad (webrtc, &m, (FindPadFunc) match_for_session);
+      GstWebRTCBinPad *pad =
+          _find_pad_for_mline (webrtc, GST_PAD_SINK, session_id);
       if (pad) {
         GST_DEBUG_OBJECT (webrtc, "found existing send pad %" GST_PTR_FORMAT
             " for transceiver %" GST_PTR_FORMAT, pad, transceiver);
-        g_assert (transceiver->sender == pad->sender);
-        _update_pad_from_sdp_media (webrtc, sdp, media_idx, pad);
+        g_assert (pad->trans == transceiver);
+        g_assert (pad->mlineindex == media_idx);
         gst_object_unref (pad);
       } else {
         GST_DEBUG_OBJECT (webrtc,
             "creating new pad send pad for transceiver %" GST_PTR_FORMAT,
             transceiver);
-        pad = _create_pad_for_sdp_media (webrtc, GST_PAD_SINK, session_id);
+        pad = _create_pad_for_sdp_media (webrtc, GST_PAD_SINK, media_idx);
         _connect_input_stream (webrtc, pad);
         _add_pad (webrtc, pad);
       }
@@ -2891,22 +2816,19 @@ _update_transceiver_from_sdp_media (GstWebRTCBin * webrtc,
     }
     if (new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY ||
         new_dir == GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV) {
-      GstWebRTCBinPad *pad;
-      SessionMatch m = { GST_PAD_SRC, session_id };
-
-      pad = _find_pad (webrtc, &m, (FindPadFunc) match_for_session);
+      GstWebRTCBinPad *pad =
+          _find_pad_for_mline (webrtc, GST_PAD_SRC, session_id);
       if (pad) {
         GST_DEBUG_OBJECT (webrtc, "found existing receive pad %" GST_PTR_FORMAT
             " for transceiver %" GST_PTR_FORMAT, pad, transceiver);
-        g_assert (transceiver->receiver == pad->receiver);
-        _update_pad_from_sdp_media (webrtc, sdp, media_idx, pad);
+        g_assert (pad->trans == transceiver);
+        g_assert (pad->mlineindex == media_idx);
         gst_object_unref (pad);
       } else {
         GST_DEBUG_OBJECT (webrtc,
             "creating new receive pad for transceiver %" GST_PTR_FORMAT,
             transceiver);
-        pad = _create_pad_for_sdp_media (webrtc, GST_PAD_SRC, session_id);
-        _update_pad_from_sdp_media (webrtc, sdp, media_idx, pad);
+        pad = _create_pad_for_sdp_media (webrtc, GST_PAD_SRC, media_idx);
         _connect_output_stream (webrtc, pad);
         /* delay adding the pad until rtpbin creates the recv output pad
          * to ghost to so queries/events travel through the pipeline correctly
@@ -3422,16 +3344,21 @@ on_rtpbin_pad_added (GstElement * rtpbin, GstPad * new_pad,
   GST_TRACE_OBJECT (webrtc, "new rtpbin pad %s", new_pad_name);
   if (g_str_has_prefix (new_pad_name, "recv_rtp_src_")) {
     guint32 session_id = 0, ssrc = 0, pt = 0;
+    GstWebRTCRTPTransceiver *trans;
+    TransportStream *stream;
     GstWebRTCBinPad *pad;
-    PtMatch m;
 
     sscanf (new_pad_name, "recv_rtp_src_%u_%u_%u", &session_id, &ssrc, &pt);
-    m.pt = pt;
-    m.direction = GST_PAD_SRC;
-    pad = _find_pad (webrtc, &m, (FindPadFunc) match_for_pt);
+
+    stream = _find_transport_for_session (webrtc, session_id);
+    if (!stream)
+      g_warn_if_reached ();
+    trans = GST_WEBRTC_RTP_TRANSCEIVER (stream);
+
+    pad = _find_pad_for_transceiver (webrtc, GST_PAD_SRC, trans);
+
     GST_TRACE_OBJECT (webrtc, "found pad %" GST_PTR_FORMAT
         " for rtpbin pad name %s", pad, new_pad_name);
-    pad->ssrc = ssrc;
     if (!pad)
       g_warn_if_reached ();
     gst_ghost_pad_set_target (GST_GHOST_PAD (pad), GST_PAD (new_pad));
@@ -3451,24 +3378,21 @@ static GstCaps *
 on_rtpbin_request_pt_map (GstElement * rtpbin, guint session_id, guint pt,
     GstWebRTCBin * webrtc)
 {
-  GstWebRTCBinPad *pad;
+  TransportStream *stream;
   GstCaps *ret;
-  PtMatch m = { GST_PAD_SRC, pt };
 
   GST_DEBUG_OBJECT (webrtc, "getting pt map for pt %d in session %d", pt,
       session_id);
 
-  pad = _find_pad (webrtc, &m, (FindPadFunc) match_for_pt);
-  if (!pad)
+  stream = _find_transport_for_session (webrtc, session_id);
+  if (!stream)
     goto unknown_session;
 
-  if ((ret = _pad_get_caps_for_pt (pad, pt)))
+  if ((ret = _transport_stream_get_caps_for_pt (stream, pt)))
     gst_caps_ref (ret);
 
   GST_TRACE_OBJECT (webrtc, "Found caps %" GST_PTR_FORMAT " for pt %d in "
       "session %d", ret, pt, session_id);
-
-  gst_object_unref (pad);
 
   return ret;
 
@@ -3662,13 +3586,9 @@ gst_webrtc_bin_release_pad (GstElement * element, GstPad * pad)
   GstWebRTCBin *webrtc = GST_WEBRTC_BIN (element);
   GstWebRTCBinPad *webrtc_pad = GST_WEBRTC_BIN_PAD (pad);
 
-  if (webrtc_pad->sender)
-    gst_object_unref (webrtc_pad->sender);
-  webrtc_pad->sender = NULL;
-
-  if (webrtc_pad->receiver)
-    gst_object_unref (webrtc_pad->receiver);
-  webrtc_pad->receiver = NULL;
+  if (webrtc_pad->trans)
+    gst_object_unref (webrtc_pad->trans);
+  webrtc_pad->trans = NULL;
 
   _remove_pad (webrtc, webrtc_pad);
 }

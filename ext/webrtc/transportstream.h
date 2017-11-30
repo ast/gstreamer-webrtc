@@ -31,6 +31,12 @@ GType transport_stream_get_type(void);
 #define TRANSPORT_STREAM_CLASS(klass)    (G_TYPE_CHECK_CLASS_CAST((klass) ,GST_TYPE_WEBRTC_TRANSPORT_STREAM,TransportStreamClass))
 #define TRANSPORT_STREAM_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS((obj) ,GST_TYPE_WEBRTC_TRANSPORT_STREAM,TransportStreamClass))
 
+typedef struct
+{
+  guint8 pt;
+  GstCaps *caps;
+} PtMapItem;
+
 struct _TransportStream
 {
   GstWebRTCRTPTransceiver   parent;
@@ -38,10 +44,13 @@ struct _TransportStream
   guint                     session_id;             /* session_id */
   gboolean                  rtcp;
   gboolean                  rtcp_mux;
+  gboolean                  rtcp_rsize;
   gboolean                  dtls_client;
   TransportSendBin         *send_bin;               /* bin containing all the sending transport elements */
   TransportReceiveBin      *receive_bin;            /* bin containing all the receiving transport elements */
   GstWebRTCICEStream       *stream;
+
+  GArray                   *ptmap;                  /* array of PtMapItem's */
 };
 
 struct _TransportStreamClass

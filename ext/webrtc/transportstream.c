@@ -42,6 +42,13 @@ enum
 };
 
 static void
+clear_ptmap_item (PtMapItem * item)
+{
+  if (item->caps)
+    gst_caps_unref (item->caps);
+}
+
+static void
 transport_stream_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
 {
@@ -116,6 +123,16 @@ transport_stream_dispose (GObject * object)
 }
 
 static void
+transport_stream_finalize (GObject * object)
+{
+  TransportStream *stream = TRANSPORT_STREAM (object);
+
+  g_array_free (stream->ptmap, TRUE);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
+}
+
+static void
 transport_stream_constructed (GObject * object)
 {
   TransportStream *stream = TRANSPORT_STREAM (object);
@@ -186,6 +203,7 @@ transport_stream_class_init (TransportStreamClass * klass)
   gobject_class->get_property = transport_stream_get_property;
   gobject_class->set_property = transport_stream_set_property;
   gobject_class->dispose = transport_stream_dispose;
+  gobject_class->finalize = transport_stream_finalize;
 
   /* some acrobatics are required to set the parent before _constructed()
    * has been called */
@@ -217,8 +235,10 @@ transport_stream_class_init (TransportStreamClass * klass)
 }
 
 static void
-transport_stream_init (TransportStream * send)
+transport_stream_init (TransportStream * stream)
 {
+  stream->ptmap = g_array_new (FALSE, TRUE, sizeof (PtMapItem));
+  g_array_set_clear_func (stream->ptmap, (GDestroyNotify) clear_ptmap_item);
 }
 
 TransportStream *

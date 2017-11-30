@@ -54,19 +54,9 @@ struct _GstWebRTCBinPad
 {
   GstGhostPad           parent;
 
-  guint                 session_id;
-  gboolean              rtcp;
-  gboolean              rtcp_mux;
-  gboolean              rtcp_rsize;
+  guint                 mlineindex;
 
-  /* only for receiving */
-  GstWebRTCRTPReceiver *receiver;
-  guint                 ssrc;
-  guint                 default_pt;
-  GArray               *ptmap;
-
-  /* only for sending */
-  GstWebRTCRTPSender   *sender;
+  GstWebRTCRTPTransceiver *trans;
 };
 
 struct _GstWebRTCBinPadClass
