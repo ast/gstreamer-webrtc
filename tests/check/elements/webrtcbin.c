@@ -27,6 +27,7 @@
 
 #include <gst/gst.h>
 #include <gst/check/gstcheck.h>
+#include <gst/check/gstharness.h>
 #include <gst/webrtc/webrtc.h>
 
 #define OPUS_RTP_CAPS(pt) "application/x-rtp,payload=" G_STRINGIFY(pt) ",encoding-name=OPUS,media=audio,clock-rate=48000"
@@ -47,10 +48,11 @@ typedef enum
 struct test_webrtc;
 struct test_webrtc
 {
+  GList *harnesses;
   GThread *thread;
   GMainLoop *loop;
-  GstElement *pipeline;
-  GstBus *bus;
+  GstBus *bus1;
+  GstBus *bus2;
   GstElement *webrtc1;
   GstElement *webrtc2;
   GMutex lock;
@@ -177,14 +179,15 @@ _bus_watch (GstBus * bus, GstMessage * msg, struct test_webrtc *t)
   g_mutex_lock (&t->lock);
   switch (GST_MESSAGE_TYPE (msg)) {
     case GST_MESSAGE_STATE_CHANGED:
-      if (GST_ELEMENT (msg->src) == t->pipeline) {
+      if (GST_ELEMENT (msg->src) == t->webrtc1
+          || GST_ELEMENT (msg->src) == t->webrtc2) {
         GstState old, new, pending;
 
         gst_message_parse_state_changed (msg, &old, &new, &pending);
 
         {
-          gchar *dump_name = g_strconcat ("state_changed-",
-              gst_element_state_get_name (old), "_",
+          gchar *dump_name = g_strconcat ("%s-state_changed-",
+              GST_OBJECT_NAME (msg->src), gst_element_state_get_name (old), "_",
               gst_element_state_get_name (new), NULL);
           GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (msg->src),
               GST_DEBUG_GRAPH_SHOW_ALL, dump_name);
@@ -196,8 +199,19 @@ _bus_watch (GstBus * bus, GstMessage * msg, struct test_webrtc *t)
       GError *err = NULL;
       gchar *dbg_info = NULL;
 
-      GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (t->pipeline),
-          GST_DEBUG_GRAPH_SHOW_ALL, "error");
+      {
+        gchar *dump_name;
+        dump_name =
+            g_strconcat ("%s-error", GST_OBJECT_NAME (t->webrtc1), NULL);
+        GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (t->webrtc1),
+            GST_DEBUG_GRAPH_SHOW_ALL, dump_name);
+        g_free (dump_name);
+        dump_name =
+            g_strconcat ("%s-error", GST_OBJECT_NAME (t->webrtc2), NULL);
+        GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (t->webrtc2),
+            GST_DEBUG_GRAPH_SHOW_ALL, dump_name);
+        g_free (dump_name);
+      }
 
       gst_message_parse_error (msg, &err, &dbg_info);
       GST_WARNING ("ERROR from element %s: %s\n",
@@ -210,8 +224,17 @@ _bus_watch (GstBus * bus, GstMessage * msg, struct test_webrtc *t)
       break;
     }
     case GST_MESSAGE_EOS:{
-      GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (t->pipeline),
-          GST_DEBUG_GRAPH_SHOW_ALL, "eos");
+      {
+        gchar *dump_name;
+        dump_name = g_strconcat ("%s-eos", GST_OBJECT_NAME (t->webrtc1), NULL);
+        GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (t->webrtc1),
+            GST_DEBUG_GRAPH_SHOW_ALL, dump_name);
+        g_free (dump_name);
+        dump_name = g_strconcat ("%s-eos", GST_OBJECT_NAME (t->webrtc2), NULL);
+        GST_DEBUG_BIN_TO_DOT_FILE_WITH_TS (GST_BIN (t->webrtc2),
+            GST_DEBUG_GRAPH_SHOW_ALL, dump_name);
+        g_free (dump_name);
+      }
       GST_INFO ("EOS received\n");
       t->state = STATE_EOS;
       g_cond_broadcast (&t->cond);
@@ -342,6 +365,17 @@ _bus_thread (struct test_webrtc *t)
   return NULL;
 }
 
+static void
+element_added_disable_sync (GstBin * bin, GstBin * sub_bin,
+    GstElement * element, gpointer user_data)
+{
+  GObjectClass *class = G_OBJECT_GET_CLASS (element);
+  if (g_object_class_find_property (class, "async"))
+    g_object_set (element, "async", FALSE, NULL);
+  if (g_object_class_find_property (class, "sync"))
+    g_object_set (element, "sync", FALSE, NULL);
+}
+
 static struct test_webrtc *
 test_webrtc_new (void)
 {
@@ -357,16 +391,21 @@ test_webrtc_new (void)
   g_mutex_init (&ret->lock);
   g_cond_init (&ret->cond);
 
-  ret->pipeline = gst_pipeline_new (NULL);
-  ret->bus = gst_pipeline_get_bus (GST_PIPELINE (ret->pipeline));
-  gst_bus_add_watch (ret->bus, (GstBusFunc) _bus_watch, ret);
+  ret->bus1 = gst_bus_new ();
+  ret->bus2 = gst_bus_new ();
+  gst_bus_add_watch (ret->bus1, (GstBusFunc) _bus_watch, ret);
+  gst_bus_add_watch (ret->bus2, (GstBusFunc) _bus_watch, ret);
   ret->webrtc1 = gst_element_factory_make ("webrtcbin", NULL);
   ret->webrtc2 = gst_element_factory_make ("webrtcbin", NULL);
   fail_unless (ret->webrtc1 != NULL && ret->webrtc2 != NULL);
 
-  gst_bin_add (GST_BIN (ret->pipeline), ret->webrtc1);
-  gst_bin_add (GST_BIN (ret->pipeline), ret->webrtc2);
+  gst_element_set_bus (ret->webrtc1, ret->bus1);
+  gst_element_set_bus (ret->webrtc2, ret->bus2);
 
+  g_signal_connect (ret->webrtc1, "deep-element-added",
+      G_CALLBACK (element_added_disable_sync), NULL);
+  g_signal_connect (ret->webrtc2, "deep-element-added",
+      G_CALLBACK (element_added_disable_sync), NULL);
   g_signal_connect (ret->webrtc1, "on-negotiation-needed",
       G_CALLBACK (_on_negotiation_needed), ret);
   g_signal_connect (ret->webrtc2, "on-negotiation-needed",
@@ -399,8 +438,6 @@ test_webrtc_new (void)
 static void
 test_webrtc_free (struct test_webrtc *t)
 {
-  gst_element_set_state (t->pipeline, GST_STATE_NULL);
-
   /* Otherwise while one webrtcbin is being destroyed, the other could
    * generate a signal that calls into the destroyed webrtcbin */
   g_signal_handlers_disconnect_by_data (t->webrtc1, t);
@@ -414,9 +451,16 @@ test_webrtc_free (struct test_webrtc *t)
 
   g_thread_join (t->thread);
 
-  gst_bus_remove_watch (t->bus);
-  gst_object_unref (t->bus);
-  gst_object_unref (t->pipeline);
+  gst_bus_remove_watch (t->bus1);
+  gst_bus_remove_watch (t->bus2);
+
+  gst_bus_set_flushing (t->bus1, TRUE);
+  gst_bus_set_flushing (t->bus2, TRUE);
+
+  gst_object_unref (t->bus1);
+  gst_object_unref (t->bus2);
+
+  g_list_free_full (t->harnesses, (GDestroyNotify) gst_harness_teardown);
 
   if (t->data_notify)
     t->data_notify (t->user_data);
@@ -430,6 +474,14 @@ test_webrtc_free (struct test_webrtc *t)
     t->answer_notify (t->answer_data);
   if (t->pad_added_notify)
     t->pad_added_notify (t->pad_added_data);
+
+  fail_unless_equals_int (GST_STATE_CHANGE_SUCCESS,
+      gst_element_set_state (t->webrtc1, GST_STATE_NULL));
+  fail_unless_equals_int (GST_STATE_CHANGE_SUCCESS,
+      gst_element_set_state (t->webrtc2, GST_STATE_NULL));
+
+  gst_object_unref (t->webrtc1);
+  gst_object_unref (t->webrtc2);
 
   g_mutex_clear (&t->lock);
   g_cond_clear (&t->cond);
@@ -448,12 +500,33 @@ test_webrtc_create_offer (struct test_webrtc *t, GstElement * webrtc)
 }
 
 static void
-test_webrtc_wait_for_answer_error_eos (struct test_webrtc *t)
+test_webrtc_wait_for_state_mask (struct test_webrtc *t, TestState state)
 {
   g_mutex_lock (&t->lock);
-  while (t->state != STATE_ANSWER_CREATED && t->state != STATE_EOS
-      && t->state != STATE_ERROR)
+  while (((1 << t->state) & state) == 0) {
+    GST_INFO ("test state 0x%x, current 0x%x", state, (1 << t->state));
     g_cond_wait (&t->cond, &t->lock);
+  }
+  GST_INFO ("have test state 0x%x, current 0x%x", state, 1 << t->state);
+  g_mutex_unlock (&t->lock);
+}
+
+static void
+test_webrtc_wait_for_answer_error_eos (struct test_webrtc *t)
+{
+  TestState states = 0;
+  states |= (1 << STATE_ANSWER_CREATED);
+  states |= (1 << STATE_EOS);
+  states |= (1 << STATE_ERROR);
+  test_webrtc_wait_for_state_mask (t, states);
+}
+
+static void
+test_webrtc_signal_state (struct test_webrtc *t, TestState state)
+{
+  g_mutex_lock (&t->lock);
+  t->state = state;
+  g_cond_broadcast (&t->cond);
   g_mutex_unlock (&t->lock);
 }
 
@@ -496,19 +569,15 @@ static void
 _pad_added_fakesink (struct test_webrtc *t, GstElement * element,
     GstPad * pad, gpointer user_data)
 {
-  GstElement *fakesink;
-  GstPad *sink;
+  GstHarness *h;
 
   if (GST_PAD_DIRECTION (pad) != GST_PAD_SRC)
     return;
 
-  fakesink = gst_element_factory_make ("fakesink", NULL);
-  g_object_set (fakesink, "async", FALSE, "sync", FALSE, NULL);
-  gst_bin_add (GST_BIN (t->pipeline), fakesink);
+  h = gst_harness_new_with_element (element, NULL, "src_%u");
+  gst_harness_add_sink_parse (h, "fakesink async=false sync=false");
 
-  sink = fakesink->sinkpads->data;
-
-  gst_pad_link (pad, sink);
+  t->harnesses = g_list_prepend (t->harnesses, h);
 }
 
 static GstWebRTCSessionDescription *
@@ -549,22 +618,39 @@ GST_START_TEST (test_sdp_no_media)
 
 GST_END_TEST;
 
+static void
+add_fake_audio_src_harness (GstHarness * h, gint pt)
+{
+  GstCaps *caps = gst_caps_from_string (OPUS_RTP_CAPS (pt));
+  GstStructure *s = gst_caps_get_structure (caps, 0);
+  gst_structure_set (s, "payload", G_TYPE_INT, pt, NULL);
+  gst_harness_set_src_caps (h, caps);
+  gst_harness_add_src_parse (h, "fakesrc is-live=true", TRUE);
+}
+
+static void
+add_fake_video_src_harness (GstHarness * h, gint pt)
+{
+  GstCaps *caps = gst_caps_from_string (VP8_RTP_CAPS (pt));
+  GstStructure *s = gst_caps_get_structure (caps, 0);
+  gst_structure_set (s, "payload", G_TYPE_INT, pt, NULL);
+  gst_harness_set_src_caps (h, caps);
+  gst_harness_add_src_parse (h, "fakesrc is-live=true", TRUE);
+}
+
 static struct test_webrtc *
 create_audio_test (void)
 {
   struct test_webrtc *t = test_webrtc_new ();
-  GstElement *src;
+  GstHarness *h;
 
   t->on_negotiation_needed = NULL;
   t->on_ice_candidate = NULL;
   t->on_pad_added = _pad_added_fakesink;
 
-  src =
-      gst_parse_bin_from_description ("fakesrc ! capsfilter caps="
-      OPUS_RTP_CAPS (96), TRUE, NULL);
-  fail_unless (src != NULL, "Could not create input pipeline");
-  fail_unless (gst_bin_add (GST_BIN (t->pipeline), src));
-  fail_unless (gst_element_link (src, t->webrtc1));
+  h = gst_harness_new_with_element (t->webrtc1, "sink_0", NULL);
+  add_fake_audio_src_harness (h, 96);
+  t->harnesses = g_list_prepend (t->harnesses, h);
 
   return t;
 }
@@ -591,25 +677,19 @@ static struct test_webrtc *
 create_audio_video_test (void)
 {
   struct test_webrtc *t = test_webrtc_new ();
-  GstElement *src;
+  GstHarness *h;
 
   t->on_negotiation_needed = NULL;
   t->on_ice_candidate = NULL;
   t->on_pad_added = _pad_added_fakesink;
 
-  src =
-      gst_parse_bin_from_description ("fakesrc ! capsfilter caps="
-      OPUS_RTP_CAPS (96), TRUE, NULL);
-  fail_unless (src != NULL, "Could not create input pipeline");
-  fail_unless (gst_bin_add (GST_BIN (t->pipeline), src));
-  fail_unless (gst_element_link (src, t->webrtc1));
+  h = gst_harness_new_with_element (t->webrtc1, "sink_0", NULL);
+  add_fake_audio_src_harness (h, 96);
+  t->harnesses = g_list_prepend (t->harnesses, h);
 
-  src =
-      gst_parse_bin_from_description ("fakesrc ! capsfilter caps="
-      VP8_RTP_CAPS (97), TRUE, NULL);
-  fail_unless (src != NULL, "Could not create input pipeline");
-  fail_unless (gst_bin_add (GST_BIN (t->pipeline), src));
-  fail_unless (gst_element_link (src, t->webrtc1));
+  h = gst_harness_new_with_element (t->webrtc1, "sink_1", NULL);
+  add_fake_video_src_harness (h, 97);
+  t->harnesses = g_list_prepend (t->harnesses, h);
 
   return t;
 }
@@ -709,14 +789,11 @@ GST_START_TEST (test_media_direction)
   const gchar *expected_answer[] = { "sendrecv", "recvonly" };
   struct validate_sdp offer = { on_sdp_media_direction, expected_offer };
   struct validate_sdp answer = { on_sdp_media_direction, expected_answer };
-  GstElement *src;
+  GstHarness *h;
 
-  src =
-      gst_parse_bin_from_description ("fakesrc ! capsfilter caps="
-      OPUS_RTP_CAPS (96), TRUE, NULL);
-  fail_unless (src != NULL, "Could not create input pipeline");
-  fail_unless (gst_bin_add (GST_BIN (t->pipeline), src));
-  fail_unless (gst_element_link (src, t->webrtc2));
+  h = gst_harness_new_with_element (t->webrtc2, "sink_0", NULL);
+  add_fake_audio_src_harness (h, 96);
+  t->harnesses = g_list_prepend (t->harnesses, h);
 
   t->offer_data = &offer;
   t->on_offer_created = validate_sdp;
@@ -829,9 +906,7 @@ GST_START_TEST (test_no_nice_elements_state_change)
     gst_registry_remove_feature (registry, nicesink);
 
   t->bus_message = NULL;
-
-  fail_unless_equals_int (GST_STATE_CHANGE_FAILURE,
-      gst_element_set_state (t->pipeline, GST_STATE_READY));
+  gst_element_set_state (t->webrtc1, GST_STATE_READY);
 
   test_webrtc_wait_for_answer_error_eos (t);
   fail_unless_equals_int (STATE_ERROR, t->state);
