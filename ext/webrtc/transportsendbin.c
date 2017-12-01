@@ -47,8 +47,7 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define transport_send_bin_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (TransportSendBin, transport_send_bin, GST_TYPE_BIN,
     GST_DEBUG_CATEGORY_INIT (gst_webrtc_transport_send_bin_debug,
-        "webrtctransportsendbin", 0, "webrtctransportsendbin");
-    );
+        "webrtctransportsendbin", 0, "webrtctransportsendbin"););
 
 static GstStaticPadTemplate rtp_sink_template =
 GST_STATIC_PAD_TEMPLATE ("rtp_sink",
@@ -262,11 +261,17 @@ _on_dtls_enc_key_set (GstElement * element, TransportSendBin * send)
   GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
 
   if (element == trans->sender->transport->dtlssrtpenc) {
+    GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
+        send->rtp_block->pad);
     _free_pad_block (send->rtp_block);
     send->rtp_block = NULL;
+    GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
+        send->rtcp_mux_block->pad);
     _free_pad_block (send->rtcp_mux_block);
     send->rtcp_mux_block = NULL;
   } else if (element == trans->sender->rtcp_transport->dtlssrtpenc) {
+    GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
+        send->rtcp_block->pad);
     _free_pad_block (send->rtcp_block);
     send->rtcp_block = NULL;
   }
