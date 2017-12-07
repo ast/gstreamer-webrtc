@@ -41,6 +41,7 @@ typedef enum
   STATE_ANSWER_CREATED,
   STATE_EOS,
   STATE_ERROR,
+  STATE_CUSTOM,
 } TestState;
 
 /* basic premise of this is that webrtc1 and webrtc2 are attempting to connect
@@ -920,6 +921,263 @@ GST_START_TEST (test_no_nice_elements_state_change)
 
 GST_END_TEST;
 
+static void
+validate_rtc_stats (const GstStructure * s)
+{
+  GstWebRTCStatsType type = 0;
+  double ts = 0.;
+  gchar *id = NULL;
+
+  fail_unless (gst_structure_get (s, "type", GST_TYPE_WEBRTC_STATS_TYPE, &type,
+          NULL));
+  fail_unless (gst_structure_get (s, "id", G_TYPE_STRING, &id, NULL));
+  fail_unless (gst_structure_get (s, "timestamp", G_TYPE_DOUBLE, &ts, NULL));
+  fail_unless (type != 0);
+  fail_unless (ts != 0.);
+  fail_unless (id != NULL);
+
+  g_free (id);
+}
+
+static void
+validate_codec_stats (const GstStructure * s)
+{
+  guint pt = 0, clock_rate = 0;
+
+  fail_unless (gst_structure_get (s, "payload-type", G_TYPE_UINT, &pt, NULL));
+  fail_unless (gst_structure_get (s, "clock-rate", G_TYPE_UINT, &clock_rate,
+          NULL));
+  fail_unless (pt >= 0 && pt <= 127);
+  fail_unless (clock_rate >= 0);
+}
+
+static void
+validate_rtc_stream_stats (const GstStructure * s, const GstStructure * stats)
+{
+  gchar *codec_id, *transport_id;
+  GstStructure *codec, *transport;
+
+  fail_unless (gst_structure_get (s, "codec-id", G_TYPE_STRING, &codec_id,
+          NULL));
+  fail_unless (gst_structure_get (s, "transport-id", G_TYPE_STRING,
+          &transport_id, NULL));
+
+  fail_unless (gst_structure_get (stats, codec_id, GST_TYPE_STRUCTURE, &codec,
+          NULL));
+  fail_unless (gst_structure_get (stats, transport_id, GST_TYPE_STRUCTURE,
+          &transport, NULL));
+
+  fail_unless (codec != NULL);
+  fail_unless (transport != NULL);
+
+  gst_structure_free (transport);
+  gst_structure_free (codec);
+
+  g_free (codec_id);
+  g_free (transport_id);
+}
+
+static void
+validate_inbound_rtp_stats (const GstStructure * s, const GstStructure * stats)
+{
+  guint ssrc, fir, pli, nack;
+  gint packets_lost;
+  guint64 packets_received, bytes_received;
+  double jitter;
+  gchar *remote_id;
+  GstStructure *remote;
+
+  validate_rtc_stream_stats (s, stats);
+
+  fail_unless (gst_structure_get (s, "ssrc", G_TYPE_UINT, &ssrc, NULL));
+  fail_unless (gst_structure_get (s, "fir-count", G_TYPE_UINT, &fir, NULL));
+  fail_unless (gst_structure_get (s, "pli-count", G_TYPE_UINT, &pli, NULL));
+  fail_unless (gst_structure_get (s, "nack-count", G_TYPE_UINT, &nack, NULL));
+  fail_unless (gst_structure_get (s, "packets-received", G_TYPE_UINT64,
+          &packets_received, NULL));
+  fail_unless (gst_structure_get (s, "bytes-received", G_TYPE_UINT64,
+          &bytes_received, NULL));
+  fail_unless (gst_structure_get (s, "jitter", G_TYPE_DOUBLE, &jitter, NULL));
+  fail_unless (gst_structure_get (s, "packets-lost", G_TYPE_INT, &packets_lost,
+          NULL));
+  fail_unless (gst_structure_get (s, "remote-id", G_TYPE_STRING, &remote_id,
+          NULL));
+  fail_unless (gst_structure_get (stats, remote_id, GST_TYPE_STRUCTURE, &remote,
+          NULL));
+  fail_unless (remote != NULL);
+
+  gst_structure_free (remote);
+  g_free (remote_id);
+}
+
+static void
+validate_remote_inbound_rtp_stats (const GstStructure * s,
+    const GstStructure * stats)
+{
+  guint ssrc;
+  gint packets_lost;
+  double jitter, rtt;
+  gchar *local_id;
+  GstStructure *local;
+
+  validate_rtc_stream_stats (s, stats);
+
+  fail_unless (gst_structure_get (s, "ssrc", G_TYPE_UINT, &ssrc, NULL));
+  fail_unless (gst_structure_get (s, "jitter", G_TYPE_DOUBLE, &jitter, NULL));
+  fail_unless (gst_structure_get (s, "packets-lost", G_TYPE_INT, &packets_lost,
+          NULL));
+  fail_unless (gst_structure_get (s, "round-trip-time", G_TYPE_DOUBLE, &rtt,
+          NULL));
+  fail_unless (gst_structure_get (s, "local-id", G_TYPE_STRING, &local_id,
+          NULL));
+  fail_unless (gst_structure_get (stats, local_id, GST_TYPE_STRUCTURE, &local,
+          NULL));
+  fail_unless (local != NULL);
+
+  gst_structure_free (local);
+  g_free (local_id);
+}
+
+static void
+validate_outbound_rtp_stats (const GstStructure * s, const GstStructure * stats)
+{
+  guint ssrc, fir, pli, nack;
+  guint64 packets_sent, bytes_sent;
+  gchar *remote_id;
+  GstStructure *remote;
+
+  validate_rtc_stream_stats (s, stats);
+
+  fail_unless (gst_structure_get (s, "ssrc", G_TYPE_UINT, &ssrc, NULL));
+  fail_unless (gst_structure_get (s, "fir-count", G_TYPE_UINT, &fir, NULL));
+  fail_unless (gst_structure_get (s, "pli-count", G_TYPE_UINT, &pli, NULL));
+  fail_unless (gst_structure_get (s, "nack-count", G_TYPE_UINT, &nack, NULL));
+  fail_unless (gst_structure_get (s, "packets-sent", G_TYPE_UINT64,
+          &packets_sent, NULL));
+  fail_unless (gst_structure_get (s, "bytes-sent", G_TYPE_UINT64, &bytes_sent,
+          NULL));
+  fail_unless (gst_structure_get (s, "remote-id", G_TYPE_STRING, &remote_id,
+          NULL));
+  fail_unless (gst_structure_get (stats, remote_id, GST_TYPE_STRUCTURE, &remote,
+          NULL));
+  fail_unless (remote != NULL);
+
+  gst_structure_free (remote);
+  g_free (remote_id);
+}
+
+static void
+validate_remote_outbound_rtp_stats (const GstStructure * s,
+    const GstStructure * stats)
+{
+  guint ssrc;
+  gchar *local_id;
+  GstStructure *local;
+
+  validate_rtc_stream_stats (s, stats);
+
+  fail_unless (gst_structure_get (s, "ssrc", G_TYPE_UINT, &ssrc, NULL));
+  fail_unless (gst_structure_get (s, "local-id", G_TYPE_STRING, &local_id,
+          NULL));
+  fail_unless (gst_structure_get (stats, local_id, GST_TYPE_STRUCTURE, &local,
+          NULL));
+  fail_unless (local != NULL);
+
+  gst_structure_free (local);
+  g_free (local_id);
+}
+
+static gboolean
+validate_stats_foreach (GQuark field_id, const GValue * value,
+    const GstStructure * stats)
+{
+  const gchar *field = g_quark_to_string (field_id);
+  GstWebRTCStatsType type;
+  const GstStructure *s;
+
+  fail_unless (GST_VALUE_HOLDS_STRUCTURE (value));
+
+  s = gst_value_get_structure (value);
+
+  GST_INFO ("validating field %s %" GST_PTR_FORMAT, field, s);
+
+  validate_rtc_stats (s);
+  gst_structure_get (s, "type", GST_TYPE_WEBRTC_STATS_TYPE, &type, NULL);
+  if (type == GST_WEBRTC_STATS_CODEC) {
+    validate_codec_stats (s);
+  } else if (type == GST_WEBRTC_STATS_INBOUND_RTP) {
+    validate_inbound_rtp_stats (s, stats);
+  } else if (type == GST_WEBRTC_STATS_OUTBOUND_RTP) {
+    validate_outbound_rtp_stats (s, stats);
+  } else if (type == GST_WEBRTC_STATS_REMOTE_INBOUND_RTP) {
+    validate_remote_inbound_rtp_stats (s, stats);
+  } else if (type == GST_WEBRTC_STATS_REMOTE_OUTBOUND_RTP) {
+    validate_remote_outbound_rtp_stats (s, stats);
+  } else if (type == GST_WEBRTC_STATS_CSRC) {
+  } else if (type == GST_WEBRTC_STATS_PEER_CONNECTION) {
+  } else if (type == GST_WEBRTC_STATS_DATA_CHANNEL) {
+  } else if (type == GST_WEBRTC_STATS_STREAM) {
+  } else if (type == GST_WEBRTC_STATS_TRANSPORT) {
+  } else if (type == GST_WEBRTC_STATS_CANDIDATE_PAIR) {
+  } else if (type == GST_WEBRTC_STATS_LOCAL_CANDIDATE) {
+  } else if (type == GST_WEBRTC_STATS_REMOTE_CANDIDATE) {
+  } else if (type == GST_WEBRTC_STATS_CERTIFICATE) {
+  } else {
+    g_assert_not_reached ();
+  }
+
+  return TRUE;
+}
+
+static void
+validate_stats (const GstStructure * stats)
+{
+  gst_structure_foreach (stats,
+      (GstStructureForeachFunc) validate_stats_foreach, (gpointer) stats);
+}
+
+static void
+_on_stats (GstPromise * promise, gpointer user_data)
+{
+  struct test_webrtc *t = user_data;
+  const GstStructure *reply = gst_promise_get_reply (promise);
+  int i;
+
+  validate_stats (reply);
+  i = GPOINTER_TO_INT (t->user_data);
+  i++;
+  t->user_data = GINT_TO_POINTER (i);
+  if (i >= 2)
+    test_webrtc_signal_state (t, STATE_CUSTOM);
+
+  gst_promise_unref (promise);
+}
+
+GST_START_TEST (test_session_stats)
+{
+  struct test_webrtc *t = test_webrtc_new ();
+  GstPromise *p;
+
+  t->on_offer_created = NULL;
+  t->on_answer_created = NULL;
+
+  test_webrtc_create_offer (t, t->webrtc1);
+
+  test_webrtc_wait_for_answer_error_eos (t);
+  fail_unless_equals_int (STATE_ANSWER_CREATED, t->state);
+
+  p = gst_promise_new_with_change_func (_on_stats, t, NULL);
+  g_signal_emit_by_name (t->webrtc1, "get-stats", NULL, p);
+  p = gst_promise_new_with_change_func (_on_stats, t, NULL);
+  g_signal_emit_by_name (t->webrtc2, "get-stats", NULL, p);
+
+  test_webrtc_wait_for_state_mask (t, 1 << STATE_CUSTOM);
+
+  test_webrtc_free (t);
+}
+
+GST_END_TEST;
+
 static Suite *
 webrtcbin_suite (void)
 {
@@ -935,6 +1193,7 @@ webrtcbin_suite (void)
   tcase_add_test (tc, test_sdp_no_media);
   tcase_add_test (tc, test_no_nice_elements_request_pad);
   tcase_add_test (tc, test_no_nice_elements_state_change);
+  tcase_add_test (tc, test_session_stats);
   if (nicesrc && nicesink) {
     tcase_add_test (tc, test_audio);
     tcase_add_test (tc, test_audio_video);

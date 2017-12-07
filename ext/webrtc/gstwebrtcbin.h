@@ -128,6 +128,8 @@ struct _GstWebRTCBinPrivate
   /* count of the number of media streams we've offered for uniqueness */
   /* FIXME: overflow? */
   guint media_counter;
+
+  GstStructure *stats;
 };
 
 typedef void (*GstWebRTCBinFunc) (GstWebRTCBin * webrtc, gpointer data);

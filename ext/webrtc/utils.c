@@ -98,3 +98,21 @@ _free_pad_block (struct pad_block *block)
     block->notify (block->user_data);
   g_free (block);
 }
+
+gchar *
+_enum_value_to_string (GType type, guint value)
+{
+  GEnumClass *enum_class;
+  GEnumValue *enum_value;
+  gchar *str = NULL;
+
+  enum_class = g_type_class_ref (type);
+  enum_value = g_enum_get_value (enum_class, value);
+
+  if (enum_value)
+    str = g_strdup (enum_value->value_nick);
+
+  g_type_class_unref (enum_class);
+
+  return str;
+}

@@ -4,6 +4,7 @@ noinst_HEADERS = \
 	fwd.h \
 	gstwebrtcbin.h \
 	gstwebrtcice.h \
+	gstwebrtcstats.h \
 	icestream.h \
 	nicetransport.h \
 	transportstream.h \
@@ -15,6 +16,7 @@ libgstwebrtc_la_SOURCES = \
 	gstwebrtc.c \
 	gstwebrtcbin.c \
 	gstwebrtcice.c \
+	gstwebrtcstats.c \
 	icestream.c \
 	nicetransport.c \
 	transportstream.c \

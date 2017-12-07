@@ -55,6 +55,9 @@ struct pad_block *      _create_pad_block           (GstElement * element,
                                                      gpointer user_data,
                                                      GDestroyNotify notify);
 
+G_GNUC_INTERNAL
+gchar *                 _enum_value_to_string       (GType type, guint value);
+
 G_END_DECLS
 
 #endif /* __WEBRTC_UTILS_H__ */

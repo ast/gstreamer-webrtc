@@ -22,6 +22,7 @@
 #endif
 
 #include "gstwebrtcbin.h"
+#include "gstwebrtcstats.h"
 #include "transportstream.h"
 #include "transportreceivebin.h"
 #include "utils.h"
@@ -82,24 +83,6 @@ GQuark
 gst_webrtc_bin_error_quark (void)
 {
   return g_quark_from_static_string ("gst-webrtc-bin-error-quark");
-}
-
-static gchar *
-_enum_value_to_string (GType type, guint value)
-{
-  GEnumClass *enum_class;
-  GEnumValue *enum_value;
-  gchar *str = NULL;
-
-  enum_class = g_type_class_ref (type);
-  enum_value = g_enum_get_value (enum_class, value);
-
-  if (enum_value)
-    str = g_strdup (enum_value->value_nick);
-
-  g_type_class_unref (enum_class);
-
-  return str;
 }
 
 G_DEFINE_TYPE (GstWebRTCBinPad, gst_webrtc_bin_pad, GST_TYPE_GHOST_PAD);
@@ -210,6 +193,7 @@ enum
   ADD_ICE_CANDIDATE_SIGNAL,
   ON_NEGOTIATION_NEEDED_SIGNAL,
   ON_ICE_CANDIDATE_SIGNAL,
+  GET_STATS_SIGNAL,
   ON_ICE_CANDIDATE_ERROR_SIGNAL,
   ON_FINGERPRINT_FAILURE_SIGNAL,
   LAST_SIGNAL,
@@ -3332,6 +3316,76 @@ _on_ice_candidate (GstWebRTCICE * ice, guint mlineindex,
       (GDestroyNotify) _free_ice_candidate_item);
 }
 
+/* https://www.w3.org/TR/webrtc/#dfn-stats-selection-algorithm */
+static GstStructure *
+_get_stats_from_selector (GstWebRTCBin * webrtc, gpointer selector)
+{
+  if (selector)
+    GST_FIXME_OBJECT (webrtc, "Implement stats selection");
+
+  return gst_structure_copy (webrtc->priv->stats);
+}
+
+struct get_stats
+{
+  GstPad *pad;
+  GstPromise *promise;
+};
+
+static void
+_free_get_stats (struct get_stats *stats)
+{
+  if (stats->pad)
+    gst_object_unref (stats->pad);
+  if (stats->promise)
+    gst_promise_unref (stats->promise);
+  g_free (stats);
+}
+
+/* https://www.w3.org/TR/webrtc/#dom-rtcpeerconnection-getstats() */
+static void
+_get_stats_task (GstWebRTCBin * webrtc, struct get_stats *stats)
+{
+  GstStructure *s;
+  gpointer selector = NULL;
+
+  gst_webrtc_bin_update_stats (webrtc);
+
+  if (stats->pad) {
+    GstWebRTCBinPad *wpad = GST_WEBRTC_BIN_PAD (stats->pad);
+
+    if (wpad->trans) {
+      if (GST_PAD_DIRECTION (wpad) == GST_PAD_SRC) {
+        selector = wpad->trans->receiver;
+      } else {
+        selector = wpad->trans->sender;
+      }
+    }
+  }
+
+  s = _get_stats_from_selector (webrtc, selector);
+  gst_promise_reply (stats->promise, s);
+}
+
+static void
+gst_webrtc_bin_get_stats (GstWebRTCBin * webrtc, GstPad * pad,
+    GstPromise * promise)
+{
+  struct get_stats *stats;
+
+  g_return_if_fail (promise != NULL);
+  g_return_if_fail (pad == NULL || GST_IS_WEBRTC_BIN_PAD (pad));
+
+  stats = g_new0 (struct get_stats, 1);
+  stats->promise = gst_promise_ref (promise);
+  /* FIXME: check that pad exists in element */
+  if (pad)
+    stats->pad = gst_object_ref (pad);
+
+  gst_webrtc_bin_enqueue_task (webrtc, (GstWebRTCBinFunc) _get_stats_task,
+      stats, (GDestroyNotify) _free_get_stats);
+}
+
 /* === rtpbin signal implementations === */
 
 static void
@@ -3729,6 +3783,10 @@ gst_webrtc_bin_finalize (GObject * object)
     gst_webrtc_session_description_free (webrtc->pending_remote_description);
   webrtc->pending_remote_description = NULL;
 
+  if (webrtc->priv->stats)
+    gst_structure_free (webrtc->priv->stats);
+  webrtc->priv->stats = NULL;
+
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
@@ -3878,6 +3936,82 @@ gst_webrtc_bin_class_init (GstWebRTCBinClass * klass)
       G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
       G_CALLBACK (gst_webrtc_bin_add_ice_candidate), NULL, NULL,
       g_cclosure_marshal_generic, G_TYPE_NONE, 2, G_TYPE_UINT, G_TYPE_STRING);
+
+  /**
+   * GstWebRTCBin::get-stats:
+   * @object: the #GstWebRtcBin
+   * @promise: a #GstPromise for the result
+   *
+   * The @promise will contain the result of retrieving the session statistics.
+   * The structure will be named 'application/x-webrtc-stats and contain the
+   * following based on the webrtc-stats spec available from
+   * https://www.w3.org/TR/webrtc-stats/.  As the webrtc-stats spec is a draft
+   * and is constantly changing these statistics may be changed to fit with
+   * the latest spec.
+   *
+   * Each field key is a unique identifer for each RTCStats
+   * (https://www.w3.org/TR/webrtc/#rtcstats-dictionary) value (another
+   * GstStructure) in the RTCStatsReport
+   * (https://www.w3.org/TR/webrtc/#rtcstatsreport-object).  Each supported
+   * field in the RTCStats subclass is outlined below.
+   *
+   * Each statistics structure contains the following values as defined by
+   * the RTCStats dictionary (https://www.w3.org/TR/webrtc/#rtcstats-dictionary).
+   *
+   *  "timestamp"           G_TYPE_DOUBLE               timestamp the statistics were generated
+   *  "type"                GST_TYPE_WEBRTC_STATS_TYPE  the type of statistics reported
+   *  "id"                  G_TYPE_STRING               unique identifier
+   *
+   * RTCCodecStats supported fields (https://w3c.github.io/webrtc-stats/#codec-dict*)
+   *
+   *  "payload-type"        G_TYPE_UINT                 the rtp payload number in use
+   *  "clock-rate"          G_TYPE_UINT                 the rtp clock-rate
+   *
+   * RTCRTPStreamStats supported fields (https://w3c.github.io/webrtc-stats/#streamstats-dict*)
+   *
+   *  "ssrc"                G_TYPE_STRING               the rtp sequence src in use
+   *  "transport-id"        G_TYPE_STRING               identifier for the associated RTCTransportStats for this stream
+   *  "codec-id"            G_TYPE_STRING               identifier for the associated RTCCodecStats for this stream
+   *  "fir-count"           G_TYPE_UINT                 FIR requests received by the sender (only for local statistics)
+   *  "pli-count"           G_TYPE_UINT                 PLI requests received by the sender (only for local statistics)
+   *  "nack-count"          G_TYPE_UINT                 NACK requests received by the sender (only for local statistics)
+   *
+   * RTCReceivedStreamStats supported fields (https://w3c.github.io/webrtc-stats/#receivedrtpstats-dict*)
+   *
+   *  "packets-received"     G_TYPE_UINT64              number of packets received (only for local inbound)
+   *  "bytes-received"       G_TYPE_UINT64              number of bytes received (only for local inbound)
+   *  "packets-lost"         G_TYPE_UINT                number of packets lost
+   *  "jitter"               G_TYPE_DOUBLE              packet jitter measured in secondss
+   *
+   * RTCInboundRTPStreamStats supported fields (https://w3c.github.io/webrtc-stats/#inboundrtpstats-dict*)
+   *
+   *  "remote-id"           G_TYPE_STRING               identifier for the associated RTCRemoteOutboundRTPSTreamStats
+   *
+   * RTCRemoteInboundRTPStreamStats supported fields (https://w3c.github.io/webrtc-stats/#remoteinboundrtpstats-dict*)
+   *
+   *  "local-id"            G_TYPE_STRING               identifier for the associated RTCOutboundRTPSTreamStats
+   *  "round-trip-time"     G_TYPE_DOUBLE               round trip time of packets measured in seconds
+   *
+   * RTCSentRTPStreamStats supported fields (https://w3c.github.io/webrtc-stats/#sentrtpstats-dict*)
+   *
+   *  "packets-sent"        G_TYPE_UINT64               number of packets sent (only for local outbound)
+   *  "bytes-sent"          G_TYPE_UINT64               number of packets sent (only for local outbound)
+   *
+   * RTCOutboundRTPStreamStats supported fields (https://w3c.github.io/webrtc-stats/#outboundrtpstats-dict*)
+   *
+   *  "remote-id"           G_TYPE_STRING               identifier for the associated RTCRemoteInboundRTPSTreamStats
+   *
+   * RTCRemoteOutboundRTPStreamStats supported fields (https://w3c.github.io/webrtc-stats/#remoteoutboundrtpstats-dict*)
+   *
+   *  "local-id"            G_TYPE_STRING               identifier for the associated RTCInboundRTPSTreamStats
+   *
+   */
+  gst_webrtc_bin_signals[GET_STATS_SIGNAL] =
+      g_signal_new_class_handler ("get-stats",
+      G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_CALLBACK (gst_webrtc_bin_get_stats), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_NONE, 2, GST_TYPE_PAD,
+      GST_TYPE_PROMISE);
 
   /**
    * GstWebRTCBin::on-negotiation-needed:

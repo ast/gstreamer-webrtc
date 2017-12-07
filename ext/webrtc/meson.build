@@ -1,6 +1,7 @@
 webrtc_sources = [
   'gstwebrtc.c',
   'gstwebrtcice.c',
+  'gstwebrtcstats.c',
   'icestream.c',
   'nicetransport.c',
   'gstwebrtcbin.c',
