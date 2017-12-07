@@ -1533,6 +1533,7 @@ sdp_media_from_transceiver (GstWebRTCBin * webrtc, GstSDPMedia * media,
   g_free (direction);
   /* FIXME: negotiate this */
   gst_sdp_media_add_attribute (media, "rtcp-mux", "");
+  gst_sdp_media_add_attribute (media, "rtcp-rsize", NULL);
 
   if (type == GST_WEBRTC_SDP_TYPE_OFFER) {
     caps = _find_codec_preferences (webrtc, trans, GST_PAD_SINK, media_idx);
