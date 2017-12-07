@@ -44,6 +44,8 @@ struct _TransportSendBin
   struct pad_block          *rtp_block;
   struct pad_block          *rtcp_mux_block;
   struct pad_block          *rtcp_block;
+  struct pad_block          *rtp_nice_block;
+  struct pad_block          *rtcp_nice_block;
 };
 
 struct _TransportSendBinClass

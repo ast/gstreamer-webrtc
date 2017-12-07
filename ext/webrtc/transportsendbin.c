@@ -47,7 +47,8 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define transport_send_bin_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (TransportSendBin, transport_send_bin, GST_TYPE_BIN,
     GST_DEBUG_CATEGORY_INIT (gst_webrtc_transport_send_bin_debug,
-        "webrtctransportsendbin", 0, "webrtctransportsendbin"););
+        "webrtctransportsendbin", 0, "webrtctransportsendbin");
+    );
 
 static GstStaticPadTemplate rtp_sink_template =
 GST_STATIC_PAD_TEMPLATE ("rtp_sink",
@@ -201,6 +202,28 @@ transport_send_bin_change_state (GstElement * element,
           GST_PAD_PROBE_TYPE_BUFFER_LIST, (GstPadProbeCallback) pad_block, NULL,
           NULL);
       gst_object_unref (pad);
+
+      /* unblock ice sink once a connection is made, this should also be automatic */
+      elem = trans->sender->transport->transport->sink;
+      pad = gst_element_get_static_pad (elem, "sink");
+      send->rtp_nice_block = _create_pad_block (elem, pad, 0, NULL, NULL);
+      send->rtp_nice_block->block_id =
+          gst_pad_add_probe (pad,
+          GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
+          GST_PAD_PROBE_TYPE_BUFFER_LIST, (GstPadProbeCallback) pad_block, NULL,
+          NULL);
+      gst_object_unref (pad);
+
+      /* unblock ice sink once a connection is made, this should also be automatic */
+      elem = trans->sender->rtcp_transport->transport->sink;
+      pad = gst_element_get_static_pad (elem, "sink");
+      send->rtcp_nice_block = _create_pad_block (elem, pad, 0, NULL, NULL);
+      send->rtcp_nice_block->block_id =
+          gst_pad_add_probe (pad,
+          GST_PAD_PROBE_TYPE_BLOCK | GST_PAD_PROBE_TYPE_BUFFER |
+          GST_PAD_PROBE_TYPE_BUFFER_LIST, (GstPadProbeCallback) pad_block, NULL,
+          NULL);
+      gst_object_unref (pad);
       break;
     }
     case GST_STATE_CHANGE_PAUSED_TO_READY:
@@ -222,6 +245,18 @@ transport_send_bin_change_state (GstElement * element,
         gst_pad_remove_probe (send->rtcp_block->pad,
             send->rtcp_block->block_id);
         send->rtcp_block->block_id = 0;
+      }
+      if (send->rtp_nice_block && send->rtp_nice_block->block_id) {
+        gst_pad_set_active (send->rtp_nice_block->pad, FALSE);
+        gst_pad_remove_probe (send->rtp_nice_block->pad,
+            send->rtp_nice_block->block_id);
+        send->rtp_nice_block->block_id = 0;
+      }
+      if (send->rtcp_nice_block && send->rtcp_nice_block->block_id) {
+        gst_pad_set_active (send->rtcp_nice_block->pad, FALSE);
+        gst_pad_remove_probe (send->rtcp_nice_block->pad,
+            send->rtcp_nice_block->block_id);
+        send->rtcp_nice_block->block_id = 0;
       }
       break;
     }
@@ -245,6 +280,13 @@ transport_send_bin_change_state (GstElement * element,
       send->rtcp_block = NULL;
       elem = trans->sender->rtcp_transport->dtlssrtpenc;
       gst_element_set_locked_state (elem, FALSE);
+
+      if (send->rtp_nice_block)
+        _free_pad_block (send->rtp_nice_block);
+      send->rtp_nice_block = NULL;
+      if (send->rtcp_nice_block)
+        _free_pad_block (send->rtcp_nice_block);
+      send->rtcp_nice_block = NULL;
       break;
     }
     default:
@@ -278,6 +320,37 @@ _on_dtls_enc_key_set (GstElement * element, TransportSendBin * send)
 }
 
 static void
+_on_notify_ice_connection_state (GstWebRTCICETransport * transport,
+    GParamSpec * pspec, TransportSendBin * send)
+{
+  GstWebRTCICEConnectionState state;
+  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
+
+  g_object_get (transport, "state", &state, NULL);
+
+  if (state == GST_WEBRTC_ICE_CONNECTION_STATE_CONNECTED ||
+      state == GST_WEBRTC_ICE_CONNECTION_STATE_COMPLETED) {
+    GST_OBJECT_LOCK (send);
+    if (transport == trans->sender->transport->transport) {
+      if (send->rtp_nice_block) {
+        GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
+            send->rtp_nice_block->pad);
+        _free_pad_block (send->rtp_nice_block);
+      }
+      send->rtp_nice_block = NULL;
+    } else if (transport == trans->sender->rtcp_transport->transport) {
+      if (send->rtcp_nice_block) {
+        GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
+            send->rtcp_nice_block->pad);
+        _free_pad_block (send->rtcp_nice_block);
+      }
+      send->rtcp_nice_block = NULL;
+    }
+    GST_OBJECT_UNLOCK (send);
+  }
+}
+
+static void
 transport_send_bin_constructed (GObject * object)
 {
   TransportSendBin *send = TRANSPORT_SEND_BIN (object);
@@ -303,6 +376,9 @@ transport_send_bin_constructed (GObject * object)
       G_CALLBACK (_on_dtls_enc_key_set), send);
   gst_bin_add (GST_BIN (send), GST_ELEMENT (transport->dtlssrtpenc));
 
+  /* unblock ice sink once it signals a connection */
+  g_signal_connect (transport->transport, "notify::state",
+      G_CALLBACK (_on_notify_ice_connection_state), send);
   gst_bin_add (GST_BIN (send), GST_ELEMENT (transport->transport->sink));
 
   if (!gst_element_link_pads (GST_ELEMENT (transport->dtlssrtpenc), "src",
@@ -325,7 +401,14 @@ transport_send_bin_constructed (GObject * object)
   templ = _find_pad_template (transport->dtlssrtpenc,
       GST_PAD_SINK, GST_PAD_REQUEST, "rtcp_sink_%d");
 
+  /* unblock the encoder once the key is set */
+  g_signal_connect (transport->dtlssrtpenc, "on-key-set",
+      G_CALLBACK (_on_dtls_enc_key_set), send);
   gst_bin_add (GST_BIN (send), GST_ELEMENT (transport->dtlssrtpenc));
+
+  /* unblock ice sink once it signals a connection */
+  g_signal_connect (transport->transport, "notify::state",
+      G_CALLBACK (_on_notify_ice_connection_state), send);
   gst_bin_add (GST_BIN (send), GST_ELEMENT (transport->transport->sink));
 
   if (!gst_element_link_pads (GST_ELEMENT (transport->dtlssrtpenc), "src",
@@ -337,14 +420,26 @@ transport_send_bin_constructed (GObject * object)
     g_warn_if_reached ();
 
   pad = gst_element_get_static_pad (send->outputselector, "sink");
-  g_signal_connect (transport->dtlssrtpenc, "on-key-set",
-      G_CALLBACK (_on_dtls_enc_key_set), send);
 
   ghost = gst_ghost_pad_new ("rtcp_sink", pad);
   gst_element_add_pad (GST_ELEMENT (send), ghost);
   gst_object_unref (pad);
 
   G_OBJECT_CLASS (parent_class)->constructed (object);
+}
+
+static void
+transport_send_bin_finalize (GObject * object)
+{
+  TransportSendBin *send = TRANSPORT_SEND_BIN (object);
+  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
+
+  g_signal_handlers_disconnect_by_data (trans->sender->transport->transport,
+      send);
+  g_signal_handlers_disconnect_by_data (trans->sender->rtcp_transport->
+      transport, send);
+
+  G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static void
@@ -364,6 +459,7 @@ transport_send_bin_class_init (TransportSendBinClass * klass)
       "Matthew Waters <matthew@centricular.com>");
 
   gobject_class->constructed = transport_send_bin_constructed;
+  gobject_class->finalize = transport_send_bin_finalize;
   gobject_class->get_property = transport_send_bin_get_property;
   gobject_class->set_property = transport_send_bin_set_property;
 
