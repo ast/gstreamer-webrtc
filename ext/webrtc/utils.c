@@ -116,3 +116,23 @@ _enum_value_to_string (GType type, guint value)
 
   return str;
 }
+
+const gchar *
+_g_checksum_to_webrtc_string (GChecksumType type)
+{
+  switch (type) {
+    case G_CHECKSUM_SHA1:
+      return "sha-1";
+    case G_CHECKSUM_SHA256:
+      return "sha-256";
+#ifdef G_CHECKSUM_SHA384
+    case G_CHECKSUM_SHA384:
+      return "sha-384";
+#endif
+    case G_CHECKSUM_SHA512:
+      return "sha-512";
+    default:
+      g_warning ("unknown GChecksumType!");
+      return NULL;
+  }
+}

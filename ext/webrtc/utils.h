@@ -57,6 +57,8 @@ struct pad_block *      _create_pad_block           (GstElement * element,
 
 G_GNUC_INTERNAL
 gchar *                 _enum_value_to_string       (GType type, guint value);
+G_GNUC_INTERNAL
+const gchar *           _g_checksum_to_webrtc_string (GChecksumType type);
 
 G_END_DECLS
 
