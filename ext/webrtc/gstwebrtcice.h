@@ -58,8 +58,7 @@ struct _GstWebRTCICEClass
 
 GstWebRTCICE *              gst_webrtc_ice_new                      (void);
 GstWebRTCICEStream *        gst_webrtc_ice_add_stream               (GstWebRTCICE * ice,
-                                                                     guint session_id,
-                                                                     guint mlineindex);
+                                                                     guint session_id);
 GstWebRTCICETransport *     gst_webrtc_ice_find_transport           (GstWebRTCICE * ice,
                                                                      GstWebRTCICEStream * stream,
                                                                      GstWebRTCICEComponent component);

@@ -188,10 +188,7 @@ transport_receive_bin_change_state (GstElement * element,
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:{
-      GstWebRTCRTPTransceiver *trans;
       GstElement *elem;
-
-      trans = GST_WEBRTC_RTP_TRANSCEIVER (receive->stream);
 
       receive->rtp_block =
           _create_pad_block (GST_ELEMENT (receive), receive->rtp_src, 0, NULL,
@@ -203,10 +200,10 @@ transport_receive_bin_change_state (GstElement * element,
       /* XXX: because nice needs the nicesrc internal main loop running in order
        * correctly STUN... */
       /* FIXME: this races with the pad exposure later and may get not-linked */
-      elem = trans->receiver->transport->transport->src;
+      elem = receive->stream->transport->transport->src;
       gst_element_set_locked_state (elem, TRUE);
       gst_element_set_state (elem, GST_STATE_PLAYING);
-      elem = trans->receiver->rtcp_transport->transport->src;
+      elem = receive->stream->rtcp_transport->transport->src;
       gst_element_set_locked_state (elem, TRUE);
       gst_element_set_state (elem, GST_STATE_PLAYING);
       break;
@@ -221,15 +218,12 @@ transport_receive_bin_change_state (GstElement * element,
 
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_NULL:{
-      GstWebRTCRTPTransceiver *trans;
       GstElement *elem;
 
-      trans = GST_WEBRTC_RTP_TRANSCEIVER (receive->stream);
-
-      elem = trans->receiver->transport->transport->src;
+      elem = receive->stream->transport->transport->src;
       gst_element_set_locked_state (elem, FALSE);
       gst_element_set_state (elem, GST_STATE_NULL);
-      elem = trans->receiver->rtcp_transport->transport->src;
+      elem = receive->stream->rtcp_transport->transport->src;
       gst_element_set_locked_state (elem, FALSE);
       gst_element_set_state (elem, GST_STATE_NULL);
 
@@ -255,7 +249,6 @@ static void
 transport_receive_bin_constructed (GObject * object)
 {
   TransportReceiveBin *receive = TRANSPORT_RECEIVE_BIN (object);
-  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (receive->stream);
   GstWebRTCDTLSTransport *transport;
   GstPad *ghost, *pad;
   GstElement *capsfilter, *funnel, *queue;
@@ -264,7 +257,7 @@ transport_receive_bin_constructed (GObject * object)
   g_return_if_fail (receive->stream);
 
   /* link ice src, dtlsrtp together for rtp */
-  transport = trans->receiver->transport;
+  transport = receive->stream->transport;
   gst_bin_add (GST_BIN (receive), GST_ELEMENT (transport->dtlssrtpdec));
 
   capsfilter = gst_element_factory_make ("capsfilter", NULL);
@@ -284,7 +277,7 @@ transport_receive_bin_constructed (GObject * object)
     g_warn_if_reached ();
 
   /* link ice src, dtlsrtp together for rtcp */
-  transport = trans->receiver->rtcp_transport;
+  transport = receive->stream->rtcp_transport;
   gst_bin_add (GST_BIN (receive), GST_ELEMENT (transport->dtlssrtpdec));
 
   capsfilter = gst_element_factory_make ("capsfilter", NULL);
@@ -306,10 +299,10 @@ transport_receive_bin_constructed (GObject * object)
   /* create funnel for rtp_src */
   funnel = gst_element_factory_make ("funnel", NULL);
   gst_bin_add (GST_BIN (receive), funnel);
-  if (!gst_element_link_pads (trans->receiver->transport->dtlssrtpdec,
+  if (!gst_element_link_pads (receive->stream->transport->dtlssrtpdec,
           "rtp_src", funnel, "sink_0"))
     g_warn_if_reached ();
-  if (!gst_element_link_pads (trans->receiver->rtcp_transport->dtlssrtpdec,
+  if (!gst_element_link_pads (receive->stream->rtcp_transport->dtlssrtpdec,
           "rtp_src", funnel, "sink_1"))
     g_warn_if_reached ();
 
@@ -331,10 +324,10 @@ transport_receive_bin_constructed (GObject * object)
   /* create funnel for rtcp_src */
   funnel = gst_element_factory_make ("funnel", NULL);
   gst_bin_add (GST_BIN (receive), funnel);
-  if (!gst_element_link_pads (trans->receiver->transport->dtlssrtpdec,
+  if (!gst_element_link_pads (receive->stream->transport->dtlssrtpdec,
           "rtcp_src", funnel, "sink_0"))
     g_warn_if_reached ();
-  if (!gst_element_link_pads (trans->receiver->rtcp_transport->dtlssrtpdec,
+  if (!gst_element_link_pads (receive->stream->rtcp_transport->dtlssrtpdec,
           "rtcp_src", funnel, "sink_1"))
     g_warn_if_reached ();
 

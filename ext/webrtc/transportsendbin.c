@@ -47,8 +47,7 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 #define transport_send_bin_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (TransportSendBin, transport_send_bin, GST_TYPE_BIN,
     GST_DEBUG_CATEGORY_INIT (gst_webrtc_transport_send_bin_debug,
-        "webrtctransportsendbin", 0, "webrtctransportsendbin");
-    );
+        "webrtctransportsendbin", 0, "webrtctransportsendbin"););
 
 static GstStaticPadTemplate rtp_sink_template =
 GST_STATIC_PAD_TEMPLATE ("rtp_sink",
@@ -151,27 +150,21 @@ transport_send_bin_change_state (GstElement * element,
 
   switch (transition) {
     case GST_STATE_CHANGE_NULL_TO_READY:{
-      GstWebRTCRTPTransceiver *trans;
       /* XXX: don't change state until the client-ness has been chosen
        * arguably the element should be able to deal with this itself or
        * we should only add it once/if we get the encoding keys */
-      trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
 
-      gst_element_set_locked_state (trans->sender->transport->dtlssrtpenc,
-          TRUE);
-      gst_element_set_locked_state (trans->sender->rtcp_transport->dtlssrtpenc,
+      gst_element_set_locked_state (send->stream->transport->dtlssrtpenc, TRUE);
+      gst_element_set_locked_state (send->stream->rtcp_transport->dtlssrtpenc,
           TRUE);
       break;
     }
     case GST_STATE_CHANGE_READY_TO_PAUSED:{
-      GstWebRTCRTPTransceiver *trans;
       GstElement *elem;
       GstPad *pad;
 
-      trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
-
       /* unblock the encoder once the key is set, this should also be automatic */
-      elem = trans->sender->transport->dtlssrtpenc;
+      elem = send->stream->transport->dtlssrtpenc;
       pad = gst_element_get_static_pad (elem, "rtp_sink_0");
       send->rtp_block = _create_pad_block (elem, pad, 0, NULL, NULL);
       send->rtp_block->block_id =
@@ -192,7 +185,7 @@ transport_send_bin_change_state (GstElement * element,
       gst_object_unref (pad);
 
 
-      elem = trans->sender->rtcp_transport->dtlssrtpenc;
+      elem = send->stream->rtcp_transport->dtlssrtpenc;
       /* unblock the encoder once the key is set, this should also be automatic */
       pad = gst_element_get_static_pad (elem, "rtcp_sink_0");
       send->rtcp_block = _create_pad_block (elem, pad, 0, NULL, NULL);
@@ -204,7 +197,7 @@ transport_send_bin_change_state (GstElement * element,
       gst_object_unref (pad);
 
       /* unblock ice sink once a connection is made, this should also be automatic */
-      elem = trans->sender->transport->transport->sink;
+      elem = send->stream->transport->transport->sink;
       pad = gst_element_get_static_pad (elem, "sink");
       send->rtp_nice_block = _create_pad_block (elem, pad, 0, NULL, NULL);
       send->rtp_nice_block->block_id =
@@ -215,7 +208,7 @@ transport_send_bin_change_state (GstElement * element,
       gst_object_unref (pad);
 
       /* unblock ice sink once a connection is made, this should also be automatic */
-      elem = trans->sender->rtcp_transport->transport->sink;
+      elem = send->stream->rtcp_transport->transport->sink;
       pad = gst_element_get_static_pad (elem, "sink");
       send->rtcp_nice_block = _create_pad_block (elem, pad, 0, NULL, NULL);
       send->rtcp_nice_block->block_id =
@@ -261,10 +254,7 @@ transport_send_bin_change_state (GstElement * element,
       break;
     }
     case GST_STATE_CHANGE_READY_TO_NULL:{
-      GstWebRTCRTPTransceiver *trans;
       GstElement *elem;
-
-      trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
 
       if (send->rtp_block)
         _free_pad_block (send->rtp_block);
@@ -272,13 +262,13 @@ transport_send_bin_change_state (GstElement * element,
       if (send->rtcp_mux_block)
         _free_pad_block (send->rtcp_mux_block);
       send->rtcp_mux_block = NULL;
-      elem = trans->sender->transport->dtlssrtpenc;
+      elem = send->stream->transport->dtlssrtpenc;
       gst_element_set_locked_state (elem, FALSE);
 
       if (send->rtcp_block)
         _free_pad_block (send->rtcp_block);
       send->rtcp_block = NULL;
-      elem = trans->sender->rtcp_transport->dtlssrtpenc;
+      elem = send->stream->rtcp_transport->dtlssrtpenc;
       gst_element_set_locked_state (elem, FALSE);
 
       if (send->rtp_nice_block)
@@ -300,9 +290,7 @@ transport_send_bin_change_state (GstElement * element,
 static void
 _on_dtls_enc_key_set (GstElement * element, TransportSendBin * send)
 {
-  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
-
-  if (element == trans->sender->transport->dtlssrtpenc) {
+  if (element == send->stream->transport->dtlssrtpenc) {
     GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
         send->rtp_block->pad);
     _free_pad_block (send->rtp_block);
@@ -311,7 +299,7 @@ _on_dtls_enc_key_set (GstElement * element, TransportSendBin * send)
         send->rtcp_mux_block->pad);
     _free_pad_block (send->rtcp_mux_block);
     send->rtcp_mux_block = NULL;
-  } else if (element == trans->sender->rtcp_transport->dtlssrtpenc) {
+  } else if (element == send->stream->rtcp_transport->dtlssrtpenc) {
     GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
         send->rtcp_block->pad);
     _free_pad_block (send->rtcp_block);
@@ -324,21 +312,20 @@ _on_notify_ice_connection_state (GstWebRTCICETransport * transport,
     GParamSpec * pspec, TransportSendBin * send)
 {
   GstWebRTCICEConnectionState state;
-  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
 
   g_object_get (transport, "state", &state, NULL);
 
   if (state == GST_WEBRTC_ICE_CONNECTION_STATE_CONNECTED ||
       state == GST_WEBRTC_ICE_CONNECTION_STATE_COMPLETED) {
     GST_OBJECT_LOCK (send);
-    if (transport == trans->sender->transport->transport) {
+    if (transport == send->stream->transport->transport) {
       if (send->rtp_nice_block) {
         GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
             send->rtp_nice_block->pad);
         _free_pad_block (send->rtp_nice_block);
       }
       send->rtp_nice_block = NULL;
-    } else if (transport == trans->sender->rtcp_transport->transport) {
+    } else if (transport == send->stream->rtcp_transport->transport) {
       if (send->rtcp_nice_block) {
         GST_LOG_OBJECT (send, "Unblocking pad %" GST_PTR_FORMAT,
             send->rtcp_nice_block->pad);
@@ -354,7 +341,6 @@ static void
 transport_send_bin_constructed (GObject * object)
 {
   TransportSendBin *send = TRANSPORT_SEND_BIN (object);
-  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
   GstWebRTCDTLSTransport *transport;
   GstPadTemplate *templ;
   GstPad *ghost, *pad;
@@ -364,7 +350,7 @@ transport_send_bin_constructed (GObject * object)
   g_object_bind_property (send, "rtcp-mux", send->stream, "rtcp-mux",
       G_BINDING_BIDIRECTIONAL);
 
-  transport = trans->sender->transport;
+  transport = send->stream->transport;
 
   templ = _find_pad_template (transport->dtlssrtpenc,
       GST_PAD_SINK, GST_PAD_REQUEST, "rtp_sink_%d");
@@ -396,7 +382,7 @@ transport_send_bin_constructed (GObject * object)
   gst_element_add_pad (GST_ELEMENT (send), ghost);
   gst_object_unref (pad);
 
-  transport = trans->sender->rtcp_transport;
+  transport = send->stream->rtcp_transport;
 
   templ = _find_pad_template (transport->dtlssrtpenc,
       GST_PAD_SINK, GST_PAD_REQUEST, "rtcp_sink_%d");
@@ -429,17 +415,19 @@ transport_send_bin_constructed (GObject * object)
 }
 
 static void
-transport_send_bin_finalize (GObject * object)
+transport_send_bin_dispose (GObject * object)
 {
   TransportSendBin *send = TRANSPORT_SEND_BIN (object);
-  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (send->stream);
 
-  g_signal_handlers_disconnect_by_data (trans->sender->transport->transport,
-      send);
-  g_signal_handlers_disconnect_by_data (trans->sender->rtcp_transport->
-      transport, send);
+  if (send->stream) {
+    g_signal_handlers_disconnect_by_data (send->stream->transport->transport,
+        send);
+    g_signal_handlers_disconnect_by_data (send->stream->
+        rtcp_transport->transport, send);
+  }
+  send->stream = NULL;
 
-  G_OBJECT_CLASS (parent_class)->finalize (object);
+  G_OBJECT_CLASS (parent_class)->dispose (object);
 }
 
 static void
@@ -459,7 +447,7 @@ transport_send_bin_class_init (TransportSendBinClass * klass)
       "Matthew Waters <matthew@centricular.com>");
 
   gobject_class->constructed = transport_send_bin_constructed;
-  gobject_class->finalize = transport_send_bin_finalize;
+  gobject_class->dispose = transport_send_bin_dispose;
   gobject_class->get_property = transport_send_bin_get_property;
   gobject_class->set_property = transport_send_bin_set_property;
 

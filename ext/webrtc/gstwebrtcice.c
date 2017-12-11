@@ -167,7 +167,6 @@ _nice_component_to_webrtc (NiceComponentType comp)
 struct NiceStreamItem
 {
   guint session_id;
-  guint mlineindex;
   guint nice_stream_id;
   GstWebRTCICEStream *stream;
 };
@@ -230,14 +229,12 @@ _nice_stream_item_find (GstWebRTCICE * ice, NiceStreamItemFindFunc func,
   return f.ret;
 }
 
-#define NICE_MATCH_INIT { -1, -1, -1, NULL }
+#define NICE_MATCH_INIT { -1, -1, NULL }
 
 static gboolean
 _match (struct NiceStreamItem *item, struct NiceStreamItem *m)
 {
   if (m->session_id != -1 && m->session_id != item->session_id)
-    return FALSE;
-  if (m->mlineindex != -1 && m->mlineindex != item->mlineindex)
     return FALSE;
   if (m->nice_stream_id != -1 && m->nice_stream_id != item->nice_stream_id)
     return FALSE;
@@ -248,13 +245,12 @@ _match (struct NiceStreamItem *item, struct NiceStreamItem *m)
 }
 
 static struct NiceStreamItem *
-_find_item (GstWebRTCICE * ice, guint session_id, guint mlineindex,
-    guint nice_stream_id, GstWebRTCICEStream * stream)
+_find_item (GstWebRTCICE * ice, guint session_id, guint nice_stream_id,
+    GstWebRTCICEStream * stream)
 {
   struct NiceStreamItem m = NICE_MATCH_INIT;
 
   m.session_id = session_id;
-  m.mlineindex = mlineindex;
   m.nice_stream_id = nice_stream_id;
   m.stream = stream;
 
@@ -262,19 +258,16 @@ _find_item (GstWebRTCICE * ice, guint session_id, guint mlineindex,
 }
 
 static struct NiceStreamItem *
-_create_nice_stream_item (GstWebRTCICE * ice, guint session_id,
-    guint mlineindex)
+_create_nice_stream_item (GstWebRTCICE * ice, guint session_id)
 {
   struct NiceStreamItem item;
 
   item.session_id = session_id;
-  item.mlineindex = mlineindex;
   item.nice_stream_id = nice_agent_add_stream (ice->priv->nice_agent, 2);
   item.stream = gst_webrtc_ice_stream_new (ice, item.nice_stream_id);
   g_array_append_val (ice->priv->nice_stream_map, item);
 
-  return _find_item (ice, item.session_id, item.mlineindex,
-      item.nice_stream_id, item.stream);
+  return _find_item (ice, item.session_id, item.nice_stream_id, item.stream);
 }
 
 static void
@@ -300,8 +293,7 @@ _parse_userinfo (const gchar * userinfo, gchar ** user, gchar ** pass)
 }
 
 GstWebRTCICEStream *
-gst_webrtc_ice_add_stream (GstWebRTCICE * ice, guint session_id,
-    guint mlineindex)
+gst_webrtc_ice_add_stream (GstWebRTCICE * ice, guint session_id)
 {
   struct NiceStreamItem m = NICE_MATCH_INIT;
   struct NiceStreamItem *item;
@@ -314,7 +306,7 @@ gst_webrtc_ice_add_stream (GstWebRTCICE * ice, guint session_id,
     return 0;
   }
 
-  item = _create_nice_stream_item (ice, session_id, mlineindex);
+  item = _create_nice_stream_item (ice, session_id);
 
   if (ice->turn_server) {
     gboolean ret;
@@ -374,7 +366,7 @@ _on_new_candidate (NiceAgent * agent, NiceCandidate * candidate,
   struct NiceStreamItem *item;
   gchar *attr;
 
-  item = _find_item (ice, -1, -1, candidate->stream_id, NULL);
+  item = _find_item (ice, -1, candidate->stream_id, NULL);
   if (!item) {
     GST_WARNING_OBJECT (ice, "received signal for non-existent stream %u",
         candidate->stream_id);
@@ -402,7 +394,7 @@ _on_new_candidate (NiceAgent * agent, NiceCandidate * candidate,
 
   attr = nice_agent_generate_local_candidate_sdp (agent, candidate);
   g_signal_emit (ice, gst_webrtc_ice_signals[ON_ICE_CANDIDATE_SIGNAL],
-      0, item->mlineindex, attr);
+      0, item->session_id, attr);
   g_free (attr);
 }
 
@@ -412,7 +404,7 @@ gst_webrtc_ice_find_transport (GstWebRTCICE * ice, GstWebRTCICEStream * stream,
 {
   struct NiceStreamItem *item;
 
-  item = _find_item (ice, -1, -1, -1, stream);
+  item = _find_item (ice, -1, -1, stream);
   g_return_val_if_fail (item != NULL, NULL);
 
   return gst_webrtc_ice_stream_find_transport (item->stream, component);
@@ -500,7 +492,7 @@ gst_webrtc_ice_add_candidate (GstWebRTCICE * ice, GstWebRTCICEStream * stream,
   NiceCandidate *cand;
   GSList *candidates = NULL;
 
-  item = _find_item (ice, -1, -1, -1, stream);
+  item = _find_item (ice, -1, -1, stream);
   g_return_if_fail (item != NULL);
 
   cand =
@@ -528,7 +520,7 @@ gst_webrtc_ice_set_remote_credentials (GstWebRTCICE * ice,
 
   g_return_val_if_fail (ufrag != NULL, FALSE);
   g_return_val_if_fail (pwd != NULL, FALSE);
-  item = _find_item (ice, -1, -1, -1, stream);
+  item = _find_item (ice, -1, -1, stream);
   g_return_val_if_fail (item != NULL, FALSE);
 
   GST_DEBUG_OBJECT (ice, "Setting remote ICE credentials on "
@@ -548,7 +540,7 @@ gst_webrtc_ice_set_local_credentials (GstWebRTCICE * ice,
 
   g_return_val_if_fail (ufrag != NULL, FALSE);
   g_return_val_if_fail (pwd != NULL, FALSE);
-  item = _find_item (ice, -1, -1, -1, stream);
+  item = _find_item (ice, -1, -1, stream);
   g_return_val_if_fail (item != NULL, FALSE);
 
   GST_DEBUG_OBJECT (ice, "Setting local ICE credentials on "
@@ -566,7 +558,7 @@ gst_webrtc_ice_gather_candidates (GstWebRTCICE * ice,
 {
   struct NiceStreamItem *item;
 
-  item = _find_item (ice, -1, -1, -1, stream);
+  item = _find_item (ice, -1, -1, stream);
   g_return_val_if_fail (item != NULL, FALSE);
 
   GST_DEBUG_OBJECT (ice, "gather candidates for stream %u",

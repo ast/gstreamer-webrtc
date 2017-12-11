@@ -10,6 +10,7 @@ webrtc_sources = [
   'transportstream.c',
   'utils.c',
   'webrtcsdp.c',
+  'webrtctransceiver.c',
 ]
 
 libnice_dep = dependency('nice', version : '>=0.1.14', required : false)

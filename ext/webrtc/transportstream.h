@@ -39,7 +39,7 @@ typedef struct
 
 struct _TransportStream
 {
-  GstWebRTCRTPTransceiver   parent;
+  GstObject                 parent;
 
   guint                     session_id;             /* session_id */
   gboolean                  rtcp;
@@ -50,19 +50,19 @@ struct _TransportStream
   TransportReceiveBin      *receive_bin;            /* bin containing all the receiving transport elements */
   GstWebRTCICEStream       *stream;
 
+  GstWebRTCDTLSTransport   *transport;
+  GstWebRTCDTLSTransport   *rtcp_transport;
+
   GArray                   *ptmap;                  /* array of PtMapItem's */
 };
 
 struct _TransportStreamClass
 {
-  GstWebRTCRTPTransceiverClass      parent_class;
+  GstObjectClass            parent_class;
 };
 
 TransportStream *       transport_stream_new        (GstWebRTCBin * webrtc,
-                                                     GstWebRTCRTPSender * sender,
-                                                     GstWebRTCRTPReceiver * receiver,
-                                                     guint session_id,
-                                                     guint mlineindex);
+                                                     guint session_id);
 
 G_END_DECLS
 

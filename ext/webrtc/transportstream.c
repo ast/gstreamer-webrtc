@@ -29,8 +29,7 @@
 #include "utils.h"
 
 #define transport_stream_parent_class parent_class
-G_DEFINE_TYPE (TransportStream, transport_stream,
-    GST_TYPE_WEBRTC_RTP_TRANSCEIVER);
+G_DEFINE_TYPE (TransportStream, transport_stream, GST_TYPE_OBJECT);
 
 enum
 {
@@ -40,13 +39,6 @@ enum
   PROP_RTCP_MUX,
   PROP_DTLS_CLIENT,
 };
-
-static void
-clear_ptmap_item (PtMapItem * item)
-{
-  if (item->caps)
-    gst_caps_unref (item->caps);
-}
 
 static void
 transport_stream_set_property (GObject * object, guint prop_id,
@@ -117,6 +109,14 @@ transport_stream_dispose (GObject * object)
     gst_object_unref (stream->receive_bin);
   stream->receive_bin = NULL;
 
+  if (stream->transport)
+    gst_object_unref (stream->transport);
+  stream->transport = NULL;
+
+  if (stream->rtcp_transport)
+    gst_object_unref (stream->rtcp_transport);
+  stream->rtcp_transport = NULL;
+
   GST_OBJECT_PARENT (object) = NULL;
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
@@ -136,28 +136,22 @@ static void
 transport_stream_constructed (GObject * object)
 {
   TransportStream *stream = TRANSPORT_STREAM (object);
-  GstWebRTCRTPTransceiver *trans = GST_WEBRTC_RTP_TRANSCEIVER (stream);
   GstWebRTCBin *webrtc;
-  GstWebRTCDTLSTransport *transport, *rtcp_transport;
   GstWebRTCICETransport *ice_trans;
 
-  transport = gst_webrtc_dtls_transport_new (stream->session_id, FALSE);
-  rtcp_transport = gst_webrtc_dtls_transport_new (stream->session_id, TRUE);
-
-  gst_webrtc_rtp_sender_set_transport (trans->sender, transport);
-  gst_webrtc_rtp_sender_set_rtcp_transport (trans->sender, rtcp_transport);
-  gst_webrtc_rtp_receiver_set_transport (trans->receiver, transport);
-  gst_webrtc_rtp_receiver_set_rtcp_transport (trans->receiver, rtcp_transport);
+  stream->transport = gst_webrtc_dtls_transport_new (stream->session_id, FALSE);
+  stream->rtcp_transport =
+      gst_webrtc_dtls_transport_new (stream->session_id, TRUE);
 
   webrtc = GST_WEBRTC_BIN (gst_object_get_parent (GST_OBJECT (object)));
 
-  g_object_bind_property (transport, "client", stream, "dtls-client",
+  g_object_bind_property (stream->transport, "client", stream, "dtls-client",
       G_BINDING_BIDIRECTIONAL);
-  g_object_bind_property (rtcp_transport, "client", stream, "dtls-client",
-      G_BINDING_BIDIRECTIONAL);
+  g_object_bind_property (stream->rtcp_transport, "client", stream,
+      "dtls-client", G_BINDING_BIDIRECTIONAL);
 
-  g_object_bind_property (transport, "certificate", rtcp_transport,
-      "certificate", G_BINDING_BIDIRECTIONAL);
+  g_object_bind_property (stream->transport, "certificate",
+      stream->rtcp_transport, "certificate", G_BINDING_BIDIRECTIONAL);
 
   /* Need to go full Java and have a transport manager?
    * Or make the caller set the ICE transport up? */
@@ -165,19 +159,19 @@ transport_stream_constructed (GObject * object)
   stream->stream = _find_ice_stream_for_session (webrtc, stream->session_id);
   if (stream->stream == NULL) {
     stream->stream = gst_webrtc_ice_add_stream (webrtc->priv->ice,
-        stream->session_id, trans->mline);
+        stream->session_id);
     _add_ice_stream_item (webrtc, stream->session_id, stream->stream);
   }
   ice_trans =
       gst_webrtc_ice_find_transport (webrtc->priv->ice, stream->stream,
       GST_WEBRTC_ICE_COMPONENT_RTP);
-  gst_webrtc_dtls_transport_set_transport (transport, ice_trans);
+  gst_webrtc_dtls_transport_set_transport (stream->transport, ice_trans);
   gst_object_unref (ice_trans);
 
   ice_trans =
       gst_webrtc_ice_find_transport (webrtc->priv->ice, stream->stream,
       GST_WEBRTC_ICE_COMPONENT_RTCP);
-  gst_webrtc_dtls_transport_set_transport (rtcp_transport, ice_trans);
+  gst_webrtc_dtls_transport_set_transport (stream->rtcp_transport, ice_trans);
   gst_object_unref (ice_trans);
 
   stream->send_bin = g_object_new (transport_send_bin_get_type (), "stream",
@@ -187,8 +181,6 @@ transport_stream_constructed (GObject * object)
       "stream", stream, NULL);
   gst_object_ref_sink (stream->receive_bin);
 
-  gst_object_unref (transport);
-  gst_object_unref (rtcp_transport);
   gst_object_unref (webrtc);
 
   G_OBJECT_CLASS (parent_class)->constructed (object);
@@ -235,6 +227,13 @@ transport_stream_class_init (TransportStreamClass * klass)
 }
 
 static void
+clear_ptmap_item (PtMapItem * item)
+{
+  if (item->caps)
+    gst_caps_unref (item->caps);
+}
+
+static void
 transport_stream_init (TransportStream * stream)
 {
   stream->ptmap = g_array_new (FALSE, TRUE, sizeof (PtMapItem));
@@ -242,13 +241,11 @@ transport_stream_init (TransportStream * stream)
 }
 
 TransportStream *
-transport_stream_new (GstWebRTCBin * webrtc, GstWebRTCRTPSender * sender,
-    GstWebRTCRTPReceiver * receiver, guint session_id, guint mlineindex)
+transport_stream_new (GstWebRTCBin * webrtc, guint session_id)
 {
   TransportStream *stream;
 
-  stream = g_object_new (transport_stream_get_type (), "sender", sender,
-      "receiver", receiver, "mlineindex", mlineindex, "webrtc", webrtc,
+  stream = g_object_new (transport_stream_get_type (), "webrtc", webrtc,
       "session-id", session_id, NULL);
 
   return stream;

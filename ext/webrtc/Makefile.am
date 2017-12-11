@@ -11,7 +11,8 @@ noinst_HEADERS = \
 	transportsendbin.h \
 	transportreceivebin.h \
 	utils.h \
-	webrtcsdp.h
+	webrtcsdp.h \
+	webrtctransceiver.h
 
 libgstwebrtc_la_SOURCES = \
 	gstwebrtc.c \
@@ -24,7 +25,8 @@ libgstwebrtc_la_SOURCES = \
 	transportsendbin.c \
 	transportreceivebin.c \
 	utils.c \
-	webrtcsdp.c
+	webrtcsdp.c \
+	webrtctransceiver.c
 
 libgstwebrtc_la_SOURCES += $(BUILT_SOURCES)
 noinst_HEADERS += $(built_headers)

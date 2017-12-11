@@ -646,7 +646,6 @@ create_audio_test (void)
   GstHarness *h;
 
   t->on_negotiation_needed = NULL;
-  t->on_ice_candidate = NULL;
   t->on_pad_added = _pad_added_fakesink;
 
   h = gst_harness_new_with_element (t->webrtc1, "sink_0", NULL);
@@ -664,6 +663,7 @@ GST_START_TEST (test_audio)
   t->on_offer_created = _count_num_sdp_media;
   t->answer_data = GUINT_TO_POINTER (1);
   t->on_answer_created = _count_num_sdp_media;
+  t->on_ice_candidate = NULL;
 
   test_webrtc_create_offer (t, t->webrtc1);
 
@@ -681,7 +681,6 @@ create_audio_video_test (void)
   GstHarness *h;
 
   t->on_negotiation_needed = NULL;
-  t->on_ice_candidate = NULL;
   t->on_pad_added = _pad_added_fakesink;
 
   h = gst_harness_new_with_element (t->webrtc1, "sink_0", NULL);
@@ -703,6 +702,7 @@ GST_START_TEST (test_audio_video)
   t->on_offer_created = _count_num_sdp_media;
   t->answer_data = GUINT_TO_POINTER (2);
   t->on_answer_created = _count_num_sdp_media;
+  t->on_ice_candidate = NULL;
 
   test_webrtc_create_offer (t, t->webrtc1);
 
@@ -800,6 +800,7 @@ GST_START_TEST (test_media_direction)
   t->on_offer_created = validate_sdp;
   t->answer_data = &answer;
   t->on_answer_created = validate_sdp;
+  t->on_ice_candidate = NULL;
 
   test_webrtc_create_offer (t, t->webrtc1);
 
@@ -848,6 +849,7 @@ GST_START_TEST (test_media_setup)
   t->on_offer_created = validate_sdp;
   t->answer_data = &answer;
   t->on_answer_created = validate_sdp;
+  t->on_ice_candidate = NULL;
 
   test_webrtc_create_offer (t, t->webrtc1);
 

@@ -103,6 +103,7 @@ struct _GstWebRTCBinPrivate
   gboolean bundle;
   GArray *transceivers;
   GArray *session_mid_map;
+  GArray *transports;
 
   GstWebRTCICE *ice;
   GArray *ice_stream_map;

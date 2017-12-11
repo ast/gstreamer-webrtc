@@ -29,6 +29,7 @@
 #include "transportstream.h"
 #include "transportreceivebin.h"
 #include "utils.h"
+#include "webrtctransceiver.h"
 
 #define GST_CAT_DEFAULT gst_webrtc_stats_debug
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
@@ -400,11 +401,10 @@ _get_stats_from_dtls_transport (GstWebRTCBin * webrtc,
 }
 
 static void
-_get_stats_from_transceiver (GstWebRTCBin * webrtc,
-    GstWebRTCRTPTransceiver * trans, const gchar * codec_id, GstStructure * s)
+_get_stats_from_transport_channel (GstWebRTCBin * webrtc,
+    TransportStream * stream, const gchar * codec_id, GstStructure * s)
 {
   GstWebRTCDTLSTransport *transport;
-  TransportStream *stream;
   GObject *rtp_session;
   GstStructure *rtp_stats;
   GValueArray *source_stats;
@@ -412,12 +412,13 @@ _get_stats_from_transceiver (GstWebRTCBin * webrtc,
   double ts;
   int i;
 
-  stream = TRANSPORT_STREAM (trans);
   gst_structure_get_double (s, "timestamp", &ts);
 
-  transport = trans->sender->transport;
+  transport = stream->transport;
   if (!transport)
-    transport = trans->receiver->transport;
+    transport = stream->transport;
+  if (!transport)
+    return;
 
   g_signal_emit_by_name (webrtc->rtpbin, "get-internal-session",
       stream->session_id, &rtp_session);
@@ -426,9 +427,9 @@ _get_stats_from_transceiver (GstWebRTCBin * webrtc,
   gst_structure_get (rtp_stats, "source-stats", G_TYPE_VALUE_ARRAY,
       &source_stats, NULL);
 
-  GST_DEBUG_OBJECT (webrtc, "retrieving rtp stream stats from transceiver %"
+  GST_DEBUG_OBJECT (webrtc, "retrieving rtp stream stats from transport %"
       GST_PTR_FORMAT " rtp session %" GST_PTR_FORMAT " with %u rtp sources, "
-      "transport %" GST_PTR_FORMAT, trans, rtp_session, source_stats->n_values,
+      "transport %" GST_PTR_FORMAT, stream, rtp_session, source_stats->n_values,
       transport);
 
   transport_id = _get_stats_from_dtls_transport (webrtc, transport, s);
@@ -501,7 +502,12 @@ _get_stats_from_pad (GstWebRTCBin * webrtc, GstPad * pad, GstStructure * s)
   gchar *codec_id;
 
   codec_id = _get_codec_stats_from_pad (webrtc, pad, s);
-  _get_stats_from_transceiver (webrtc, wpad->trans, codec_id, s);
+  if (wpad->trans) {
+    WebRTCTransceiver *trans;
+    trans = WEBRTC_TRANSCEIVER (wpad->trans);
+    if (trans->stream)
+      _get_stats_from_transport_channel (webrtc, trans->stream, codec_id, s);
+  }
 
   g_free (codec_id);
 
