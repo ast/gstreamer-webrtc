@@ -194,6 +194,8 @@ enum
   ON_NEGOTIATION_NEEDED_SIGNAL,
   ON_ICE_CANDIDATE_SIGNAL,
   GET_STATS_SIGNAL,
+  ADD_TRANSCEIVER_SIGNAL,
+  GET_TRANSCEIVERS_SIGNAL,
   LAST_SIGNAL,
 };
 
@@ -2718,6 +2720,51 @@ gst_webrtc_bin_get_stats (GstWebRTCBin * webrtc, GstPad * pad,
       stats, (GDestroyNotify) _free_get_stats);
 }
 
+static GstWebRTCRTPTransceiver *
+gst_webrtc_bin_add_transceiver (GstWebRTCBin * webrtc,
+    GstWebRTCRTPTransceiverDirection direction, GstCaps * caps)
+{
+  WebRTCTransceiver *trans;
+  GstWebRTCRTPTransceiver *rtp_trans;
+
+  g_return_val_if_fail (direction != GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_NONE,
+      NULL);
+
+  trans = _create_webrtc_transceiver (webrtc);
+  rtp_trans = GST_WEBRTC_RTP_TRANSCEIVER (trans);
+  rtp_trans->direction = direction;
+  if (caps)
+    rtp_trans->codec_preferences = gst_caps_ref (caps);
+
+  return gst_object_ref (trans);
+}
+
+static void
+_deref_and_unref (GstObject ** object)
+{
+  if (object)
+    gst_object_unref (*object);
+}
+
+static GArray *
+gst_webrtc_bin_get_transceivers (GstWebRTCBin * webrtc)
+{
+  GArray *arr = g_array_new (FALSE, TRUE, sizeof (gpointer));
+  int i;
+
+  g_array_set_clear_func (arr, (GDestroyNotify) _deref_and_unref);
+
+  for (i = 0; i < webrtc->priv->transceivers->len; i++) {
+    GstWebRTCRTPTransceiver *trans =
+        g_array_index (webrtc->priv->transceivers, GstWebRTCRTPTransceiver *,
+        i);
+    gst_object_ref (trans);
+    g_array_append_val (arr, trans);
+  }
+
+  return arr;
+}
+
 /* === rtpbin signal implementations === */
 
 static void
@@ -3377,6 +3424,33 @@ gst_webrtc_bin_class_init (GstWebRTCBinClass * klass)
       g_signal_new ("on-ice-candidate", G_TYPE_FROM_CLASS (klass),
       G_SIGNAL_RUN_LAST, 0, NULL, NULL, g_cclosure_marshal_generic,
       G_TYPE_NONE, 2, G_TYPE_UINT, G_TYPE_STRING);
+
+  /**
+   * GstWebRTCBin::add-transceiver:
+   * @object: the #GstWebRtcBin
+   * @direction: the direction of the new transceiver
+   * @caps: (allow none): the codec preferences for this transceiver
+   *
+   * Returns: the new #GstWebRTCRTPTransceiver
+   */
+  gst_webrtc_bin_signals[ADD_TRANSCEIVER_SIGNAL] =
+      g_signal_new_class_handler ("add-transceiver", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_CALLBACK (gst_webrtc_bin_add_transceiver), NULL, NULL,
+      g_cclosure_marshal_generic, GST_TYPE_WEBRTC_RTP_TRANSCEIVER, 2,
+      GST_TYPE_WEBRTC_RTP_TRANSCEIVER_DIRECTION, GST_TYPE_CAPS);
+
+  /**
+   * GstWebRTCBin::get-transceivers:
+   * @object: the #GstWebRtcBin
+   *
+   * Returns: a #GArray of #GstWebRTCRTPTransceivers
+   */
+  gst_webrtc_bin_signals[GET_TRANSCEIVERS_SIGNAL] =
+      g_signal_new_class_handler ("get-transceivers", G_TYPE_FROM_CLASS (klass),
+      G_SIGNAL_RUN_LAST | G_SIGNAL_ACTION,
+      G_CALLBACK (gst_webrtc_bin_get_transceivers), NULL, NULL,
+      g_cclosure_marshal_generic, G_TYPE_ARRAY, 0);
 }
 
 static void

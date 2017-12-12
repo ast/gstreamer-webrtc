@@ -1199,6 +1199,149 @@ GST_START_TEST (test_session_stats)
 
 GST_END_TEST;
 
+GST_START_TEST (test_add_transceiver)
+{
+  struct test_webrtc *t = test_webrtc_new ();
+  GstWebRTCRTPTransceiverDirection direction;
+  GstWebRTCRTPTransceiver *trans;
+
+  direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDRECV;
+  g_signal_emit_by_name (t->webrtc1, "add-transceiver", direction, NULL,
+      &trans);
+  fail_unless (trans != NULL);
+  fail_unless_equals_int (direction, trans->direction);
+
+  gst_object_unref (trans);
+
+  test_webrtc_free (t);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_get_transceivers)
+{
+  struct test_webrtc *t = create_audio_test ();
+  GstWebRTCRTPTransceiver *trans;
+  GArray *transceivers;
+
+  g_signal_emit_by_name (t->webrtc1, "get-transceivers", &transceivers);
+  fail_unless (transceivers != NULL);
+  fail_unless_equals_int (1, transceivers->len);
+
+  trans = g_array_index (transceivers, GstWebRTCRTPTransceiver *, 0);
+  fail_unless (trans != NULL);
+
+  g_array_unref (transceivers);
+
+  test_webrtc_free (t);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_add_recvonly_transceiver)
+{
+  struct test_webrtc *t = test_webrtc_new ();
+  GstWebRTCRTPTransceiverDirection direction;
+  GstWebRTCRTPTransceiver *trans;
+  const gchar *expected_offer[] = { "recvonly" };
+  const gchar *expected_answer[] = { "sendonly" };
+  struct validate_sdp offer = { on_sdp_media_direction, expected_offer };
+  struct validate_sdp answer = { on_sdp_media_direction, expected_answer };
+  GstCaps *caps;
+  GstHarness *h;
+
+  /* add a transceiver that will only receive an opus stream and check that
+   * the created offer is marked as recvonly */
+
+  t->on_pad_added = _pad_added_fakesink;
+  t->on_negotiation_needed = NULL;
+  t->offer_data = &offer;
+  t->on_offer_created = validate_sdp;
+  t->answer_data = &answer;
+  t->on_answer_created = validate_sdp;
+  t->on_ice_candidate = NULL;
+
+  /* setup recvonly transceiver */
+  caps = gst_caps_from_string (OPUS_RTP_CAPS (96));
+  direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY;
+  g_signal_emit_by_name (t->webrtc1, "add-transceiver", direction, caps,
+      &trans);
+  gst_caps_unref (caps);
+  fail_unless (trans != NULL);
+  gst_object_unref (trans);
+
+  /* setup sendonly peer */
+  h = gst_harness_new_with_element (t->webrtc2, "sink_0", NULL);
+  add_fake_audio_src_harness (h, 96);
+  t->harnesses = g_list_prepend (t->harnesses, h);
+
+  test_webrtc_create_offer (t, t->webrtc1);
+
+  test_webrtc_wait_for_answer_error_eos (t);
+  fail_unless_equals_int (STATE_ANSWER_CREATED, t->state);
+  test_webrtc_free (t);
+}
+
+GST_END_TEST;
+
+GST_START_TEST (test_recvonly_sendonly)
+{
+  struct test_webrtc *t = test_webrtc_new ();
+  GstWebRTCRTPTransceiverDirection direction;
+  GstWebRTCRTPTransceiver *trans;
+  const gchar *expected_offer[] = { "recvonly", "sendonly" };
+  const gchar *expected_answer[] = { "sendonly", "recvonly" };
+  struct validate_sdp offer = { on_sdp_media_direction, expected_offer };
+  struct validate_sdp answer = { on_sdp_media_direction, expected_answer };
+  GstCaps *caps;
+  GstHarness *h;
+  GArray *transceivers;
+
+  /* add a transceiver that will only receive an opus stream and check that
+   * the created offer is marked as recvonly */
+
+  t->on_pad_added = _pad_added_fakesink;
+  t->on_negotiation_needed = NULL;
+  t->offer_data = &offer;
+  t->on_offer_created = validate_sdp;
+  t->answer_data = &answer;
+  t->on_answer_created = validate_sdp;
+  t->on_ice_candidate = NULL;
+
+  /* setup recvonly transceiver */
+  caps = gst_caps_from_string (OPUS_RTP_CAPS (96));
+  direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_RECVONLY;
+  g_signal_emit_by_name (t->webrtc1, "add-transceiver", direction, caps,
+      &trans);
+  gst_caps_unref (caps);
+  fail_unless (trans != NULL);
+  gst_object_unref (trans);
+
+  /* setup sendonly stream */
+  h = gst_harness_new_with_element (t->webrtc1, "sink_1", NULL);
+  add_fake_audio_src_harness (h, 96);
+  t->harnesses = g_list_prepend (t->harnesses, h);
+  g_signal_emit_by_name (t->webrtc1, "get-transceivers", &transceivers);
+  fail_unless (transceivers != NULL);
+  trans = g_array_index (transceivers, GstWebRTCRTPTransceiver *, 1);
+  trans->direction = GST_WEBRTC_RTP_TRANSCEIVER_DIRECTION_SENDONLY;
+
+  g_array_unref (transceivers);
+
+  /* setup sendonly peer */
+  h = gst_harness_new_with_element (t->webrtc2, "sink_0", NULL);
+  add_fake_audio_src_harness (h, 96);
+  t->harnesses = g_list_prepend (t->harnesses, h);
+
+  test_webrtc_create_offer (t, t->webrtc1);
+
+  test_webrtc_wait_for_answer_error_eos (t);
+  fail_unless_equals_int (STATE_ANSWER_CREATED, t->state);
+  test_webrtc_free (t);
+}
+
+GST_END_TEST;
+
 static Suite *
 webrtcbin_suite (void)
 {
@@ -1220,6 +1363,10 @@ webrtcbin_suite (void)
     tcase_add_test (tc, test_audio_video);
     tcase_add_test (tc, test_media_direction);
     tcase_add_test (tc, test_media_setup);
+    tcase_add_test (tc, test_add_transceiver);
+    tcase_add_test (tc, test_get_transceivers);
+    tcase_add_test (tc, test_add_recvonly_transceiver);
+    tcase_add_test (tc, test_recvonly_sendonly);
   }
 
   if (nicesrc)
