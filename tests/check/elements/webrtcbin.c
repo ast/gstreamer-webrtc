@@ -605,6 +605,8 @@ GST_START_TEST (test_sdp_no_media)
 {
   struct test_webrtc *t = test_webrtc_new ();
 
+  /* check that a no stream connection creates 0 media sections */
+
   t->offer_data = GUINT_TO_POINTER (0);
   t->on_offer_created = _count_num_sdp_media;
   t->answer_data = GUINT_TO_POINTER (0);
@@ -659,6 +661,9 @@ GST_START_TEST (test_audio)
 {
   struct test_webrtc *t = create_audio_test ();
 
+  /* check that a single stream connection creates the associated number
+   * of media sections */
+
   t->offer_data = GUINT_TO_POINTER (1);
   t->on_offer_created = _count_num_sdp_media;
   t->answer_data = GUINT_TO_POINTER (1);
@@ -697,6 +702,9 @@ create_audio_video_test (void)
 GST_START_TEST (test_audio_video)
 {
   struct test_webrtc *t = create_audio_video_test ();
+
+  /* check that a dual stream connection creates the associated number
+   * of media sections */
 
   t->offer_data = GUINT_TO_POINTER (2);
   t->on_offer_created = _count_num_sdp_media;
@@ -792,6 +800,8 @@ GST_START_TEST (test_media_direction)
   struct validate_sdp answer = { on_sdp_media_direction, expected_answer };
   GstHarness *h;
 
+  /* check the default media directions for transceivers */
+
   h = gst_harness_new_with_element (t->webrtc2, "sink_0", NULL);
   add_fake_audio_src_harness (h, 96);
   t->harnesses = g_list_prepend (t->harnesses, h);
@@ -845,6 +855,8 @@ GST_START_TEST (test_media_setup)
   struct validate_sdp offer = { on_sdp_media_setup, expected_offer };
   struct validate_sdp answer = { on_sdp_media_setup, expected_answer };
 
+  /* check the default dtls setup negotiation values */
+
   t->offer_data = &offer;
   t->on_offer_created = validate_sdp;
   t->answer_data = &answer;
@@ -866,6 +878,9 @@ GST_START_TEST (test_no_nice_elements_request_pad)
   GstPluginFeature *nicesrc, *nicesink;
   GstRegistry *registry;
   GstPad *pad;
+
+  /* check that the absence of libnice elements posts an error on the bus
+   * when requesting a pad */
 
   registry = gst_registry_get ();
   nicesrc = gst_registry_lookup_feature (registry, "nicesrc");
@@ -898,6 +913,8 @@ GST_START_TEST (test_no_nice_elements_state_change)
   struct test_webrtc *t = test_webrtc_new ();
   GstPluginFeature *nicesrc, *nicesink;
   GstRegistry *registry;
+
+  /* check that the absence of libnice elements posts an error on the bus */
 
   registry = gst_registry_get ();
   nicesrc = gst_registry_lookup_feature (registry, "nicesrc");
@@ -1159,6 +1176,8 @@ GST_START_TEST (test_session_stats)
 {
   struct test_webrtc *t = test_webrtc_new ();
   GstPromise *p;
+
+  /* test that the stats generated without any streams are sane */
 
   t->on_offer_created = NULL;
   t->on_answer_created = NULL;
