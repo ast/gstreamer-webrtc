@@ -20,6 +20,11 @@
 #ifndef __GST_WEBRTC_FWD_H__
 #define __GST_WEBRTC_FWD_H__
 
+#ifndef GST_USE_UNSTABLE_API
+#warning "The WebRTC library from gst-plugins-bad is unstable API and may change in future."
+#warning "You can define GST_USE_UNSTABLE_API to avoid this warning."
+#endif
+
 #include <gst/gst.h>
 #include <gst/webrtc/webrtc-enumtypes.h>
 

@@ -44,7 +44,7 @@ gstwebrtc_dependencies = [gstbase_dep, gstpbutils_dep, gstsdp_dep]
 
 gstwebrtc = library('gstwebrtc-' + api_version,
   webrtc_sources, gstwebrtc_c, gstwebrtc_h,
-  c_args : gst_plugins_bad_args,
+  c_args : gst_plugins_bad_args + ['-DGST_USE_UNSTABLE_API'],
   include_directories : [configinc, libsinc],
   version : libversion,
   soversion : soversion,
