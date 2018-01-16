@@ -47,11 +47,15 @@ struct _GstWebRTCDTLSTransport
   guint                              session_id;
   GstElement                        *dtlssrtpenc;
   GstElement                        *dtlssrtpdec;
+
+  gpointer                          _padding[GST_PADDING];
 };
 
 struct _GstWebRTCDTLSTransportClass
 {
   GstBinClass               parent_class;
+
+  gpointer                  _padding[GST_PADDING];
 };
 
 GST_EXPORT

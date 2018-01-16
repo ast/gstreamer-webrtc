@@ -44,11 +44,15 @@ struct _GstWebRTCRTPSender
   GstWebRTCDTLSTransport            *rtcp_transport;
 
   GArray                            *send_encodings;
+
+  gpointer                          _padding[GST_PADDING];
 };
 
 struct _GstWebRTCRTPSenderClass
 {
   GstObjectClass        parent_class;
+
+  gpointer              _padding[GST_PADDING];
 };
 
 GST_EXPORT

@@ -47,6 +47,8 @@ struct _GstWebRTCICETransport
   /* Filled by subclasses */
   GstElement                        *src;
   GstElement                        *sink;
+
+  gpointer                          _padding[GST_PADDING];
 };
 
 struct _GstWebRTCICETransportClass
@@ -54,6 +56,8 @@ struct _GstWebRTCICETransportClass
   GstBinClass               parent_class;
 
   gboolean                  (*gather_candidates)        (GstWebRTCICETransport * transport);
+
+  gpointer                  _padding[GST_PADDING];
 };
 
 GST_EXPORT

@@ -50,11 +50,15 @@ struct _GstWebRTCRTPTransceiver
   GstWebRTCRTPTransceiverDirection  current_direction;
 
   GstCaps                          *codec_preferences;
+
+  gpointer                          _padding[GST_PADDING];
 };
 
 struct _GstWebRTCRTPTransceiverClass
 {
   GstObjectClass        parent_class;
+
+  gpointer              _padding[GST_PADDING];
 };
 
 GST_EXPORT

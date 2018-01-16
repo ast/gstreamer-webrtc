@@ -45,11 +45,15 @@ struct _GstWebRTCRTPReceiver
   /* The MediStreamTrack is represented by the stream and is output into @transport/@rtcp_transport as necessary */
   GstWebRTCDTLSTransport            *transport;
   GstWebRTCDTLSTransport            *rtcp_transport;
+
+  gpointer                          _padding[GST_PADDING];
 };
 
 struct _GstWebRTCRTPReceiverClass
 {
   GstObjectClass            parent_class;
+
+  gpointer                  _padding[GST_PADDING];
 };
 
 GST_EXPORT
