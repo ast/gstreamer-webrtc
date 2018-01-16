@@ -72,7 +72,7 @@ typedef enum /*< underscore_name=gst_webrtc_dtls_transport_state >*/
  * GST_WEBRTC_ICE_GATHERING_STATE_GATHERING: gathering
  * GST_WEBRTC_ICE_GATHERING_STATE_COMPLETE: complete
  *
- * See http://w3c.github.io/webrtc-pc/#dom-rtcicegatheringstate
+ * See <ulink url="http://w3c.github.io/webrtc-pc/#dom-rtcicegatheringstate">http://w3c.github.io/webrtc-pc/#dom-rtcicegatheringstate</ulink>
  */
 typedef enum /*< underscore_name=gst_webrtc_ice_gathering_state >*/
 {
@@ -91,7 +91,7 @@ typedef enum /*< underscore_name=gst_webrtc_ice_gathering_state >*/
  * GST_WEBRTC_ICE_CONNECTION_STATE_DISCONNECTED: disconnected
  * GST_WEBRTC_ICE_CONNECTION_STATE_CLOSED: closed
  *
- * See http://w3c.github.io/webrtc-pc/#dom-rtciceconnectionstate
+ * See <ulink url="http://w3c.github.io/webrtc-pc/#dom-rtciceconnectionstate">http://w3c.github.io/webrtc-pc/#dom-rtciceconnectionstate</ulink>
  */
 typedef enum /*< underscore_name=gst_webrtc_ice_connection_state >*/
 {
@@ -113,7 +113,7 @@ typedef enum /*< underscore_name=gst_webrtc_ice_connection_state >*/
  * GST_WEBRTC_SIGNALING_STATE_HAVE_LOCAL_PRANSWER: have-local-pranswer
  * GST_WEBRTC_SIGNALING_STATE_HAVE_REMOTE_PRANSWER: have-remote-pranswer
  *
- * See http://w3c.github.io/webrtc-pc/#dom-rtcsignalingstate
+ * See <ulink url="http://w3c.github.io/webrtc-pc/#dom-rtcsignalingstate">http://w3c.github.io/webrtc-pc/#dom-rtcsignalingstate</ulink>
  */
 typedef enum /*< underscore_name=gst_webrtc_signaling_state >*/
 {
@@ -134,7 +134,7 @@ typedef enum /*< underscore_name=gst_webrtc_signaling_state >*/
  * GST_WEBRTC_PEER_CONNECTION_STATE_FAILED: failed
  * GST_WEBRTC_PEER_CONNECTION_STATE_CLOSED: closed
  *
- * See http://w3c.github.io/webrtc-pc/#dom-rtcpeerconnectionstate
+ * See <ulink url="http://w3c.github.io/webrtc-pc/#dom-rtcpeerconnectionstate">http://w3c.github.io/webrtc-pc/#dom-rtcpeerconnectionstate</ulink>
  */
 typedef enum /*< underscore_name=gst_webrtc_peer_connection_state >*/
 {
@@ -175,7 +175,7 @@ typedef enum /*< underscore_name=gst_webrtc_ice_component >*/
  * GST_WEBRTC_SDP_TYPE_ANSWER: answer
  * GST_WEBRTC_SDP_TYPE_ROLLBACK: rollback
  *
- * See http://w3c.github.io/webrtc-pc/#rtcsdptype
+ * See <ulink url="http://w3c.github.io/webrtc-pc/#rtcsdptype">http://w3c.github.io/webrtc-pc/#rtcsdptype</ulink>
  */
 typedef enum /*< underscore_name=gst_webrtc_sdp_type >*/
 {

@@ -17,6 +17,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
+/**
+ * SECTION:gstwebrtc-icetransport
+ * @short_description: RTCIceTransport object
+ * @title: GstWebRTCICETransport
+ * @see_also: #GstWebRTCRTPSender, #GstWebRTCRTPReceiver, #GstWebRTCDTLSTransport
+ *
+ * <ulink url="https://www.w3.org/TR/webrtc/#rtcicetransport">https://www.w3.org/TR/webrtc/#rtcicetransport</ulink>
+ */
+
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif

@@ -33,6 +33,13 @@ const gchar *       gst_webrtc_sdp_type_to_string (GstWebRTCSDPType type);
 GST_EXPORT
 GType gst_webrtc_session_description_get_type (void);
 
+/**
+ * GstWebRTCSessionDescription:
+ * type: the #GstWebRTCSDPType of the description
+ * sdp: the #GstSDPMessage of the description
+ *
+ * See <ulink url="https://www.w3.org/TR/webrtc/#rtcsessiondescription-class">https://www.w3.org/TR/webrtc/#rtcsessiondescription-class</ulink>
+ */
 struct _GstWebRTCSessionDescription
 {
   GstWebRTCSDPType       type;

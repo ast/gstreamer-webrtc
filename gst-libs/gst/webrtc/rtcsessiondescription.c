@@ -17,6 +17,14 @@
  * Boston, MA 02110-1301, USA.
  */
 
+/**
+ * SECTION:gstwebrtc-sessiondescription
+ * @short_description: RTCSessionDescription object
+ * @title: GstWebRTCSessionDescription
+ *
+ * <ulink url="https://www.w3.org/TR/webrtc/#rtcsessiondescription-class">https://www.w3.org/TR/webrtc/#rtcsessiondescription-class</ulink>
+ */
+
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
@@ -26,6 +34,13 @@
 #define GST_CAT_DEFAULT gst_webrtc_peerconnection_debug
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 
+/**
+ * gst_webrtc_sdp_type_to_string:
+ * @type: a #GstWebRTCSDPType
+ *
+ * Returns: the string representation of @type or "unknown" when @type is not
+ *      recognized.
+ */
 const gchar *
 gst_webrtc_sdp_type_to_string (GstWebRTCSDPType type)
 {
@@ -43,6 +58,12 @@ gst_webrtc_sdp_type_to_string (GstWebRTCSDPType type)
   }
 }
 
+/**
+ * gst_webrtc_session_description_copy:
+ * @src: (transfer none): a #GstWebRTCSessionDescription
+ *
+ * Returns: (transfer full): a new copy of @src
+ */
 GstWebRTCSessionDescription *
 gst_webrtc_session_description_copy (const GstWebRTCSessionDescription * src)
 {
@@ -59,6 +80,12 @@ gst_webrtc_session_description_copy (const GstWebRTCSessionDescription * src)
   return ret;
 }
 
+/**
+ * gst_webrtc_session_description_free:
+ * @desc: (transfer full): a #GstWebRTCSessionDescription
+ *
+ * Free @desc and all associated resources
+ */
 void
 gst_webrtc_session_description_free (GstWebRTCSessionDescription * desc)
 {
@@ -68,6 +95,14 @@ gst_webrtc_session_description_free (GstWebRTCSessionDescription * desc)
   g_free (desc);
 }
 
+/**
+ * gst_webrtc_session_description_new:
+ * @type: a #GstWebRTCSDPType
+ * @sdp: a #GstSDPMessage
+ *
+ * Returns: (transfer full): a new #GstWebRTCSessionDescription from @type
+ *      and @sdp
+ */
 GstWebRTCSessionDescription *
 gst_webrtc_session_description_new (GstWebRTCSDPType type, GstSDPMessage * sdp)
 {

@@ -17,6 +17,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
+/**
+ * SECTION:gstwebrtc-transceiver
+ * @short_description: RTCRtpTransceiver object
+ * @title: GstWebRTCRTPTransceiver
+ * @see_also: #GstWebRTCRTPSender, #GstWebRTCRTPReceiver
+ *
+ * <ulink url="https://www.w3.org/TR/webrtc/#rtcrtptransceiver-interface">https://www.w3.org/TR/webrtc/#rtcrtptransceiver-interface</ulink>
+ */
+
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
