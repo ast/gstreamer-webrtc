@@ -37,7 +37,7 @@ GType gst_webrtc_rtp_sender_get_type(void);
 
 struct _GstWebRTCRTPSender
 {
-  GstBin                             parent;
+  GstObject                          parent;
 
   /* The MediStreamTrack is represented by the stream and is output into @transport/@rtcp_transport as necessary */
   GstWebRTCDTLSTransport            *transport;
@@ -48,7 +48,7 @@ struct _GstWebRTCRTPSender
 
 struct _GstWebRTCRTPSenderClass
 {
-  GstBinClass               parent_class;
+  GstObjectClass        parent_class;
 };
 
 GST_EXPORT

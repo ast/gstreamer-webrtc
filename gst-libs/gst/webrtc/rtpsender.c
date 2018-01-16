@@ -29,7 +29,7 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 
 #define gst_webrtc_rtp_sender_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (GstWebRTCRTPSender, gst_webrtc_rtp_sender,
-    GST_TYPE_BIN, GST_DEBUG_CATEGORY_INIT (gst_webrtc_rtp_sender_debug,
+    GST_TYPE_OBJECT, GST_DEBUG_CATEGORY_INIT (gst_webrtc_rtp_sender_debug,
         "webrtcsender", 0, "webrtcsender");
     );
 

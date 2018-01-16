@@ -28,7 +28,7 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 
 #define gst_webrtc_rtp_receiver_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE (GstWebRTCRTPReceiver, gst_webrtc_rtp_receiver,
-    GST_TYPE_BIN, GST_DEBUG_CATEGORY_INIT (gst_webrtc_rtp_receiver_debug,
+    GST_TYPE_OBJECT, GST_DEBUG_CATEGORY_INIT (gst_webrtc_rtp_receiver_debug,
         "webrtcreceiver", 0, "webrtcreceiver"););
 
 enum

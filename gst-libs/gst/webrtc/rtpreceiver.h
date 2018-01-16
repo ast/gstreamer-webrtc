@@ -40,7 +40,7 @@ typedef struct _GstWebRTCRTPReceiverClass GstWebRTCRTPReceiverClass;
 
 struct _GstWebRTCRTPReceiver
 {
-  GstBin                             parent;
+  GstObject                          parent;
 
   /* The MediStreamTrack is represented by the stream and is output into @transport/@rtcp_transport as necessary */
   GstWebRTCDTLSTransport            *transport;
@@ -49,7 +49,7 @@ struct _GstWebRTCRTPReceiver
 
 struct _GstWebRTCRTPReceiverClass
 {
-  GstBinClass               parent_class;
+  GstObjectClass            parent_class;
 };
 
 GST_EXPORT
